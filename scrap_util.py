@@ -37,23 +37,40 @@ def create_chrome_options():
     options.add_argument("--accept-language=ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
     return options
 
-def save_login_page(driver):
-    """Сохраняет HTML страницы входа"""
-    try:
-        with open('login_page.html', 'w', encoding='utf-8') as f:
-            f.write(driver.page_source)
-        logger.info("HTML страницы входа сохранён: login_page.html")
-    except Exception as e:
-        logger.error(f"Ошибка при сохранении login_page.html: {e}")
 
-def save_final_page(driver):
-    """Сохраняет HTML финальной страницы (после попытки авторизации)"""
+
+def save_page_html(driver, filename, directory="."):
+    """
+    Сохраняет HTML-код текущей страницы в указанный файл в заданной директории.
+    
+    Параметры:
+    - driver: экземпляр WebDriver
+    - filename (str): имя файла (например, "login_page.html")
+    - directory (str): путь к директории (по умолчанию — текущая директория ".")
+    
+    Примеры:
+    save_page_html(driver, "login.html", "logs")
+    save_page_html(driver, "dashboard.html")
+    """
+    import os
+
     try:
-        with open('final_page.html', 'w', encoding='utf-8') as f:
+        # Формируем полный путь: директория + файл
+        filepath = os.path.join(directory, filename)
+        
+        # Создаём директорию, если её нет
+        os.makedirs(directory, exist_ok=True)
+        
+        # Сохраняем HTML
+        with open(filepath, 'w', encoding='utf-8') as f:
             f.write(driver.page_source)
-        logger.info("HTML финальной страницы сохранён: final_page.html")
+        
+        logger.info(f"HTML сохранён: {filepath}")
+
     except Exception as e:
-        logger.error(f"Ошибка при сохранении final_page.html: {e}")
+        logger.error(f"Ошибка при сохранении {filepath}: {e}")
+
+
 
 def click_with_retries(element, driver, max_retries=3):
     """Кликает по элементу с повторными попытками"""
@@ -104,7 +121,7 @@ def main():
         logger.info(f"Страница загружена: {driver.current_url}")
 
         # 2. Сохранение HTML страницы входа
-        save_login_page(driver)
+        save_page_html(driver, 'login_page.html', 'work_parsed_pages')
 
         # 3. Удаление оверлея (приоритет!)
         remove_overlay(driver)
@@ -180,7 +197,7 @@ def main():
         get_browser_logs(driver)  # Собираем JS‑ошибки после действия
 
         # 11. Сохранение финальной страницы (всегда!)
-        save_final_page(driver)
+        save_page_html(driver, 'main_company.html', 'work_parsed_pages')
 
         # 12. Проверка результата авторизации
         current_url = driver.current_url
