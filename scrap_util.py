@@ -109,6 +109,8 @@ def remove_overlay(driver):
         logger.info("Оверлея не найдено в DOM — продолжаем.")
         return False
 
+
+
 def main():
     driver = None
     try:
