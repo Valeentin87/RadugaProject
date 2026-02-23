@@ -361,6 +361,211 @@ def wait_for_page_load(driver, timeout=30):
     )
     time.sleep(1)  # Небольшая пауза для стабилизации
 
+# ------- логика поиска кликабельных элементов для нажатия на НОВАЯ ЗАЯВКА и получения более подробной информации по ней с целью последующего принятия в работу -------
+
+def click_first_claim_details_and_save(driver, wait_timeout=10):
+    """
+    Ищет элементы с классом 'claim-status', находит кликабельный элемент рядом с ним,
+    кликает на первый найденный и сохраняет информацию о странице.
+
+
+    Args:
+        driver: экземпляр WebDriver
+        wait_timeout: время ожидания элементов в секундах (по умолчанию 10 с)
+
+    Returns:
+        dict: информация о первой заявке или None при ошибке
+    """
+    wait = WebDriverWait(driver, wait_timeout)
+
+    try:
+        # Ждём появления элементов с классом claim-status
+        status_elements = wait.until(
+            EC.presence_of_all_elements_located((By.CLASS_NAME, "claim-status"))
+        )
+
+        if not status_elements:
+            print("Не найдено элементов с классом 'claim-status'")
+            return None
+
+        print(f"Найдено элементов с классом 'claim-status': {len(status_elements)}")
+
+        # Стратегии поиска кликабельного элемента — в порядке приоритета
+        strategies = [
+            # 1. Первая строка таблицы (наиболее вероятный кандидат)
+            {
+                'locator': "//tbody[@role='rowgroup']//tr[@role='row'][1]",
+                'type': By.XPATH,
+                'desc': 'Первая строка таблицы (tr[role="row"])'
+            },
+            # 2. Номер заявки в первой строке
+            {
+                'locator': "//tr[@role='row'][1]//td[contains(@class, 'cdk-column-id')]//span",
+                'type': By.XPATH,
+                'desc': 'Номер заявки в первой строке'
+            },
+            # 3. Статус в первой строке
+            {
+                'locator': "//tr[@role='row'][1]//span[@class='claim-status-name']",
+                'type': By.XPATH,
+                'desc': 'Статус заявки в первой строке'
+            },
+            # 4. Любая кликабельная ячейка в первой строке
+            {
+                'locator': "//tr[@role='row'][1]//*[@onclick or @href or contains(@class, 'click') or contains(@class, 'btn')]",
+                'type': By.XPATH,
+                'desc': 'Кликабельная ячейка в первой строке'
+            }
+        ]
+
+        # Перебираем стратегии поиска
+        for strategy in strategies:
+            try:
+                print(f"Пробуем стратегию: {strategy['desc']}")
+                clickable_element = wait.until(
+                    EC.element_to_be_clickable((strategy['type'], strategy['locator']))
+                )
+
+                # Прокрутка к элементу
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});",
+            clickable_element
+                )
+                time.sleep(0.5)
+
+                # Пытаемся кликнуть
+                try:
+                    clickable_element.click()
+                except Exception:
+                    # Если обычный клик не сработал, пробуем через JavaScript
+                    driver.execute_script("arguments[0].click();", clickable_element)
+
+                # Ждём загрузки деталей заявки
+                time.sleep(2)
+
+                # Сохраняем информацию о текущей странице
+                claim_info = save_claim_details(driver)
+                if claim_info:
+                    print("Информация о заявке успешно сохранена")
+                    return claim_info
+                else:
+                    print("Не удалось сохранить информацию о заявке")
+
+            except TimeoutException:
+                print(f"Элемент не найден/не кликабелен: {strategy['desc']}")
+                continue
+            except Exception as e:
+                print(f"Ошибка при клике по {strategy['desc']}: {e}")
+                continue
+
+        print("Не удалось найти кликабельный элемент ни для одного из claim-status")
+        return None
+
+    except Exception as e:
+        print(f"Ошибка при поиске элементов claim-status: {e}")
+        return None
+
+def save_claim_details(driver):
+    """
+    Сохраняет информацию о детализированной странице заявки.
+
+    Returns:
+        dict с информацией о заявке или None
+    """
+    try:
+        page_url = driver.current_url
+        save_page_html(driver, 'first_new_claim_detail.html', 'work_parsed_pages')
+
+        # Ищем заголовок или ключевые данные на странице деталей
+        try:
+            title_element = driver.find_element(
+                By.XPATH,
+                "//h1 | //h2 | //*[contains(@class, 'title') | contains(@class, 'header')]"
+            )
+            title = title_element.text.strip()
+        except Exception:
+            title = "Заголовок не найден"
+
+        # Сохраняем скриншот для визуальной верификации
+        timestamp = int(time.time())
+        screenshot_path = f"claim_details_{timestamp}.png"
+        driver.save_screenshot(screenshot_path)
+
+        claim_info = {
+            "url": page_url,
+            "title": title,
+            "screenshot": screenshot_path,
+            "timestamp": timestamp
+        }
+        return claim_info
+    except Exception as e:
+        print(f"Ошибка при сохранении деталей заявки: {e}")
+        return None
+
+
+def find_clickable_nearby(driver, status_element):
+    """
+    Ищет кликабельный элемент поблизости от элемента status_element.
+
+    Проверяет:
+    1. Родительские элементы.
+    2. Соседние элементы (предыдущий/следующий sibling).
+    3. Потомок с классом 'claim-status-name' или похожий.
+
+    Returns:
+        WebElement или None
+    """
+    strategies = [
+        # 1. Родительский элемент (часто кликабелен)
+        lambda: status_element.find_element(By.XPATH, "./ancestor::*"),
+        # 2. Ближайший кликабельный родитель
+        lambda: driver.execute_script(
+            "let el = arguments[0]; while (el && !el.click) { el = el.parentElement; } return el;",
+            status_element
+        ),
+        # 3. Соседний элемент с классом, содержащим 'click', 'btn', 'link'
+        lambda: status_element.find_element(
+            By.XPATH,
+            "./following-sibling::* | ./preceding-sibling::*[contains(@class, 'click') or contains(@class, 'btn') or contains(@class, 'link')]"
+        ),
+        # 4. Потомок с текстом 'Новая заявка'
+        lambda: status_element.find_element(
+            By.XPATH,
+            ".//*[contains(text(), 'Новая заявка')]"
+        ),
+        # 5. Потомок с классом claim-status-name
+        lambda: status_element.find_element(
+            By.XPATH,
+            ".//span[@class='claim-status-name']"
+        ),
+        # 6. Любой кликабельный потомок
+        lambda: status_element.find_element(
+            By.XPATH,
+            ".//*[@onclick or @href or contains(@class, 'clickable')]"
+        )
+    ]
+
+    for i, strategy in enumerate(strategies):
+        try:
+            element = strategy()
+            if element and is_element_clickable(element):
+                return element
+        except Exception:
+            continue
+
+    return None
+
+
+def is_element_clickable(element):
+    """Проверяет, можно ли кликнуть по элементу."""
+    return (
+        element.is_displayed() and
+        element.is_enabled() and
+        element.size['width'] > 0 and
+        element.size['height'] > 0
+    )
+
+
 
 def main():
     driver = None
@@ -484,6 +689,18 @@ def main():
                 logger.info(f"Information of new claims: {new_claims_data=}")
             except Exception as e:
                 logger.error(f"Произошла ошибка при получении информации по новым заявкам в виде словаря {e=}")
+
+            # 15. Получаем детальную информацию о первой новой заявке
+            try:
+                first_claim_info = click_first_claim_details_and_save(driver)
+                if first_claim_info:
+                    print("Информация о первой заявке:", first_claim_info)
+                    logger.info(f"Информация о первой заявке: {first_claim_info=}")
+                else:
+                    print("Не удалось получить информацию о заявке")
+                    logger.warning("Не удалось получить иныормацию о первой заявке. ВОзможно их нет")
+            except Exception as e:
+                    logger.error(f"При получении подробной информации о первой новой заявке произошла ошибка: {e=}")
         else:
             logger.error("❌ Авторизация не прошла — не удалось подтвердить статус авторизации")
 
