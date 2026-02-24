@@ -352,6 +352,140 @@ def collect_new_claims_data(driver):
 # print(data)
 
 
+def close_popup_if_exists(driver, wait_timeout=10):
+    """
+    Ищет на текущей странице кликабельный элемент с классом 'popup_close' и нажимает на него
+    для закрытия всплывающего окна.
+
+    Args:
+        driver: экземпляр WebDriver
+        wait_timeout: время ожидания элемента в секундах (по умолчанию 10 с)
+
+    Returns:
+        bool: True, если элемент найден и клик выполнен; False, если элемент не найден
+    """
+    wait = WebDriverWait(driver, wait_timeout)
+
+    try:
+        # Ожидаем появления кликабельного элемента с классом popup_close
+        close_button = wait.until(
+            EC.element_to_be_clickable((By.CLASS_NAME, "popup_close"))
+        )
+
+        # Прокручиваем к элементу, чтобы он был виден на экране
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});",
+            close_button
+        )
+
+        # Кликаем по элементу
+        close_button.click()
+        logging.info("Всплывающее окно успешно закрыто (кнопка с классом 'popup_close')")
+        return True
+
+    except Exception as e:
+        logging.warning(f"Элемент с классом 'popup_close' не найден или не кликабелен: {e}")
+        return False
+
+
+def click_work_button(driver, wait_timeout=10):
+    """
+        Ищет на текущей странице кликабельный элемент — кнопку «В работу» с заданными атрибутами
+        и нажимает на неё.
+        Args:
+        driver: экземпляр WebDriver
+           wait_timeout: время ожидания элемента в секундах (по умолчанию 10 с)
+
+        Returns:
+           bool: True, если элемент найден и клик выполнен; False, если элемент не найден
+    """
+    print("click_work_button: Стартовал метод поиска кнопки В РАБОТУ")
+
+    wait = WebDriverWait(driver, wait_timeout)
+    button = None
+
+    try:
+        # Стратегия 1: поиск по классу кнопки и тексту внутри span
+        print("Стратегия 1: поиск по классу 'lib-button green' и тексту ' В работу '")
+        button = wait.until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//button[@class='lib-button green' and .//span[text()=' В работу ']"
+            )))
+    except Exception as e1:
+        print(f"Стратегия 1 не сработала: {e1}")
+        try:
+            # Стратегия 2: поиск по роли и классу кнопки (более общий)
+            print("Стратегия 2: поиск по role='button' и классу 'lib-button'")
+            button = wait.until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//button[@class='lib-button green']//span[contains(text(), 'В работу')]"
+                )))
+        except Exception as e2:
+            print(f"Стратегия 2 не сработала: {e2}")
+            try:
+                # Стратегия 3: поиск по тексту внутри кнопки (игнорируя структуру)
+                print("Стратегия 3: поиск по содержанию текста 'В работу' в span")
+                button = wait.until(
+                    EC.element_to_be_clickable((
+                        By.XPATH,
+                        "//button[.//span[contains(text(), 'В работу')]]"
+                    )))
+            except Exception as e3:
+                print(f"Стратегия 3 не сработала: {e3}")
+                try:
+                  # Стратегия 4: поиск по комбинации атрибутов
+                    print("Стратегия 4: поиск по комбинации role, type, class, tabindex")
+                    button = wait.until(
+                        EC.element_to_be_clickable((
+                            By.XPATH,
+                            "//button[@role='button' and @type='button' and contains(@class, 'lib-button') and @tabindex='0']"
+                        )))
+                except Exception as e4:
+                    print(f"Стратегия 4 не сработала: {e4}")
+                    try:
+                        # Дополнительная стратегия: поиск любого кликабельного элемента с текстом «В работу»
+                        print("Дополнительная стратегия: поиск любого кликабельного элемента с текстом 'В работу'")
+                        button = wait.until(
+                        EC.element_to_be_clickable((
+                            By.XPATH,
+                            "//*[contains(text(), 'В работу') and (self::button or ancestor::button)]"
+                        )))
+                    except Exception as e5:
+                        print(f"Дополнительная стратегия не сработала: {e5}")
+                        logger.warning("Не удалось найти кнопку «В работу» ни по одному из селекторов")
+                        return False
+
+    if button is not None:
+        # Прокручиваем к элементу, чтобы он был виден на экране
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});",
+            button
+        )
+        print("Элемент найден, прокручиваемся к нему")
+
+        # Пытаемся кликнуть стандартным способом
+        try:
+            button.click()
+            logger.info("Кнопка «В работу» успешно нажата (стандартный клик)")
+            print("Кнопка «В работу» успешно нажата (стандартный клик)")
+            return True
+        except Exception:
+        # Если стандартный клик не сработал, используем JavaScript‑клик
+            try:
+                driver.execute_script("arguments[0].click();", button)
+                logger.info("Кнопка «В работу» успешно нажата (JavaScript‑клик)")
+                print("Кнопка «В работу» успешно нажата (JavaScript‑клик)")
+                return True
+            except Exception as e:
+                logger.error(f"Не удалось нажать кнопку «В работу»: {e}")
+                print(f"Не удалось нажать кнопку «В работу»: {e}")
+                return False
+    else:
+        logger.warning("Кнопка «В работу» не найдена")
+        print("Кнопка «В работу» не найдена после всех стратегий поиска")
+        return False
 
 
 def wait_for_page_load(driver, timeout=30):
@@ -363,119 +497,143 @@ def wait_for_page_load(driver, timeout=30):
 
 # ------- логика поиска кликабельных элементов для нажатия на НОВАЯ ЗАЯВКА и получения более подробной информации по ней с целью последующего принятия в работу -------
 
-def click_first_claim_details_and_save(driver, wait_timeout=10):
+
+def click_all_claim_details_and_save(driver, wait_timeout=10):
     """
-    Ищет элементы с классом 'claim-status', находит кликабельный элемент рядом с ним,
-    кликает на первый найденный и сохраняет информацию о странице.
-
-
-    Args:
-        driver: экземпляр WebDriver
-        wait_timeout: время ожидания элементов в секундах (по умолчанию 10 с)
-
-    Returns:
-        dict: информация о первой заявке или None при ошибке
+        Ищет элементы с классом 'claim-status', находит кликабельные элементы рядом с ними,
+        кликает на каждый и сохраняет информацию о страницах с деталями заявок.
     """
     wait = WebDriverWait(driver, wait_timeout)
-
+    all_claims_info = []
     try:
         # Ждём появления элементов с классом claim-status
         status_elements = wait.until(
             EC.presence_of_all_elements_located((By.CLASS_NAME, "claim-status"))
         )
-
         if not status_elements:
             print("Не найдено элементов с классом 'claim-status'")
-            return None
-
+            return all_claims_info
         print(f"Найдено элементов с классом 'claim-status': {len(status_elements)}")
-
-        # Стратегии поиска кликабельного элемента — в порядке приоритета
-        strategies = [
-            # 1. Первая строка таблицы (наиболее вероятный кандидат)
-            {
-                'locator': "//tbody[@role='rowgroup']//tr[@role='row'][1]",
-                'type': By.XPATH,
-                'desc': 'Первая строка таблицы (tr[role="row"])'
-            },
-            # 2. Номер заявки в первой строке
-            {
-                'locator': "//tr[@role='row'][1]//td[contains(@class, 'cdk-column-id')]//span",
-                'type': By.XPATH,
-                'desc': 'Номер заявки в первой строке'
-            },
-            # 3. Статус в первой строке
-            {
-                'locator': "//tr[@role='row'][1]//span[@class='claim-status-name']",
-                'type': By.XPATH,
-                'desc': 'Статус заявки в первой строке'
-            },
-            # 4. Любая кликабельная ячейка в первой строке
-            {
-                'locator': "//tr[@role='row'][1]//*[@onclick or @href or contains(@class, 'click') or contains(@class, 'btn')]",
-                'type': By.XPATH,
-                'desc': 'Кликабельная ячейка в первой строке'
-            }
-        ]
-
-        # Перебираем стратегии поиска
-        for strategy in strategies:
+        # Сохраняем базовый URL для навигации
+        base_url = driver.current_url
+        print(f"{base_url=}")
+        for i in range(len(status_elements)):
+            print(f"\n--- Обработка элемента #{i + 1} из {len(status_elements)} ---")
+            claim_info = None
+            clicked = False
+            # Перезагружаем страницу перед обработкой каждого элемента
+            # driver.get(base_url)
+            # wait.until(EC.url_contains(base_url))
+            time.sleep(2)
+            # Снова находим все элементы claim-status после перезагрузки
+            status_elements_refreshed = wait.until(
+                EC.presence_of_all_elements_located((By.CLASS_NAME, "claim-status"))
+            )
+            if i >= len(status_elements_refreshed):
+                print(f"Элемент #{i + 1} больше не найден после перезагрузки страницы")
+                continue
+            current_status_element = status_elements_refreshed[i]
+            # Получаем строку таблицы, содержащую текущий элемент claim-status
             try:
-                print(f"Пробуем стратегию: {strategy['desc']}")
-                clickable_element = wait.until(
-                    EC.element_to_be_clickable((strategy['type'], strategy['locator']))
-                )
-
-                # Прокрутка к элементу
-                driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});",
-            clickable_element
-                )
-                time.sleep(0.5)
-
-                # Пытаемся кликнуть
+                row_element = current_status_element.find_element(By.XPATH, "./ancestor::tr[@role='row']")
+                row_index = row_element.get_attribute("data-index") or str(i)
+            except Exception:
+                print("Не удалось найти строку таблицы для текущего элемента claim-status")
+                continue
+            strategies = [
+                # 1. Сама строка таблицы
+                {
+                   'locator': f"//tr[@role='row'][{i + 1}]",
+                   'type': By.XPATH,
+                   'desc': 'Сама строка таблицы (tr[role="row"])'
+                },
+                # 2. Номер заявки в текущей строке
+                {
+                    'locator': f"//tr[@role='row'][{i + 1}]//td[contains(@class, 'cdk-column-id')]//span",
+                    'type': By.XPATH,
+                    'desc': 'Номер заявки в текущей строке'
+                },
+                # 3. Статус в текущей строке
+                {
+                    'locator': f"//tr[@role='row'][{i + 1}]//span[@class='claim-status-name']",
+                    'type': By.XPATH,
+                    'desc': 'Статус заявки в текущей строке'
+                }
+            ]
+            for strategy in strategies:
                 try:
-                    clickable_element.click()
-                except Exception:
-                    # Если обычный клик не сработал, пробуем через JavaScript
-                    driver.execute_script("arguments[0].click();", clickable_element)
-
-                # Ждём загрузки деталей заявки
-                time.sleep(2)
-
-                # Сохраняем информацию о текущей странице
-                claim_info = save_claim_details(driver)
-                if claim_info:
-                    print("Информация о заявке успешно сохранена")
-                    return claim_info
-                else:
-                    print("Не удалось сохранить информацию о заявке")
-
-            except TimeoutException:
-                print(f"Элемент не найден/не кликабелен: {strategy['desc']}")
-                continue
-            except Exception as e:
-                print(f"Ошибка при клике по {strategy['desc']}: {e}")
-                continue
-
-        print("Не удалось найти кликабельный элемент ни для одного из claim-status")
-        return None
-
+                    print(f"Пробуем стратегию: {strategy['desc']}")
+                    clickable_element = wait.until(
+                        EC.element_to_be_clickable((strategy['type'], strategy['locator']))
+                    )
+                    # Прокрутка к элементу
+                    driver.execute_script(
+                        "arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});",
+                        clickable_element
+                    )
+                    time.sleep(0.5)
+                    # Пытаемся кликнуть
+                    try:
+                        clickable_element.click()
+                    except Exception:
+                        driver.execute_script("arguments[0].click();", clickable_element)
+                    # Ждём загрузки деталей заявки
+                    time.sleep(2)
+                    # Сохраняем информацию о текущей странице
+                    claim_info = save_claim_details(driver, claim_id=f"claim_{i + 1}")
+                    if claim_info:
+                        print("Информация о заявке успешно сохранена")
+                        claim_info['claim_number'] = i + 1
+                        all_claims_info.append(claim_info)
+                        clicked = True
+                        # Принимаем заявку в работу - пока без реализации
+                        click_result = click_work_button(driver)
+                        print("Получилось нажать кнопку ПРИНЯТЬ В РАБОТУ, сохраняем контент страницы")
+                        if click_result:
+                            time.sleep(2.5)
+                            save_claim_details(driver, approve_flag=True)
+                        # Закрываем окно
+                        #close_popup_if_exists(driver)
+                        break
+                    else:
+                        print("Не удалось сохранить информацию о заявке")
+                except TimeoutException:
+                    print(f"Элемент не найден/не кликабелен: {strategy['desc']}")
+                    continue
+                except Exception as e:
+                    print(f"Ошибка при клике по {strategy['desc']}: {e}")
+                    continue
+            if not clicked:
+                print(f"Не удалось обработать элемент #{i + 1} — переходим к следующему")
+        print(f"\n--- Завершено: обработано {len(all_claims_info)} заявок из {len(status_elements)} ---")
+        return all_claims_info
     except Exception as e:
-        print(f"Ошибка при поиске элементов claim-status: {e}")
-        return None
+        print(f"Критическая ошибка при обработке элементов claim-status: {e}")
+        return all_claims_info
 
-def save_claim_details(driver):
+
+
+def save_claim_details(driver, claim_id="unknown", approve_flag=False):
     """
-    Сохраняет информацию о детализированной странице заявки.
-
-    Returns:
-        dict с информацией о заявке или None
+        Сохраняет информацию о детализированной странице заявки.
+        Добавляет ID заявки в имя файла для уникальности.
     """
     try:
         page_url = driver.current_url
-        save_page_html(driver, 'first_new_claim_detail.html', 'work_parsed_pages')
-
+        logger.info(f"save_claim_details: {page_url=}")
+        claim_id:str = page_url.split('/')[-1]
+        if not claim_id.isdigit():
+            return None
+        page_source = driver.page_source
+        # Сохраняем HTML-код страницы
+        filename = ''
+        if not approve_flag:
+            filename = f"work_parsed_pages/claim_detail_{claim_id}.html"
+        else:
+            filename = f"work_parsed_pages/claim_approve_{claim_id}.html"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(page_source)
+        logging.info(f"HTML сохранён: {filename}")
         # Ищем заголовок или ключевые данные на странице деталей
         try:
             title_element = driver.find_element(
@@ -485,22 +643,55 @@ def save_claim_details(driver):
             title = title_element.text.strip()
         except Exception:
             title = "Заголовок не найден"
-
-        # Сохраняем скриншот для визуальной верификации
-        timestamp = int(time.time())
-        screenshot_path = f"claim_details_{timestamp}.png"
-        driver.save_screenshot(screenshot_path)
-
         claim_info = {
             "url": page_url,
             "title": title,
-            "screenshot": screenshot_path,
-            "timestamp": timestamp
+            "html_file": filename,
+            "timestamp": int(time.time())
         }
         return claim_info
     except Exception as e:
         print(f"Ошибка при сохранении деталей заявки: {e}")
         return None
+
+
+# def save_claim_details(driver):
+#     """
+#     Сохраняет информацию о детализированной странице заявки.
+
+#     Returns:
+#         dict с информацией о заявке или None
+#     """
+#     try:
+#         page_url = driver.current_url
+#         claim_id = page_url.split('/')[-1]
+#         save_page_html(driver, f'claim_detail_{claim_id}.html', 'work_parsed_pages')
+
+#         # Ищем заголовок или ключевые данные на странице деталей
+#         try:
+#             title_element = driver.find_element(
+#                 By.XPATH,
+#                 "//h1 | //h2 | //*[contains(@class, 'title') | contains(@class, 'header')]"
+#             )
+#             title = title_element.text.strip()
+#         except Exception:
+#             title = "Заголовок не найден"
+
+#         # Сохраняем скриншот для визуальной верификации
+#         timestamp = int(time.time())
+#         screenshot_path = f"claim_details_{timestamp}.png"
+#         driver.save_screenshot(screenshot_path)
+
+#         claim_info = {
+#             "url": page_url,
+#             "title": title,
+#             "screenshot": screenshot_path,
+#             "timestamp": timestamp
+#         }
+#         return claim_info
+#     except Exception as e:
+#         print(f"Ошибка при сохранении деталей заявки: {e}")
+#         return None
 
 
 def find_clickable_nearby(driver, status_element):
@@ -690,17 +881,17 @@ def main():
             except Exception as e:
                 logger.error(f"Произошла ошибка при получении информации по новым заявкам в виде словаря {e=}")
 
-            # 15. Получаем детальную информацию о первой новой заявке
+            # 15. Получаем детальную информацию о всех новых заявках
             try:
-                first_claim_info = click_first_claim_details_and_save(driver)
-                if first_claim_info:
-                    print("Информация о первой заявке:", first_claim_info)
-                    logger.info(f"Информация о первой заявке: {first_claim_info=}")
+                all_claim_info = click_all_claim_details_and_save(driver)
+                if all_claim_info:
+                    print("Информация о всех новых заявках:", all_claim_info)
+                    logger.info(f"Информация о всех новых заявках: {all_claim_info=}")
                 else:
-                    print("Не удалось получить информацию о заявке")
-                    logger.warning("Не удалось получить иныормацию о первой заявке. ВОзможно их нет")
+                    print("Не удалось получить информацию о заявках")
+                    logger.warning("Не удалось получить иныормацию о новых заявке. ВОзможно их нет")
             except Exception as e:
-                    logger.error(f"При получении подробной информации о первой новой заявке произошла ошибка: {e=}")
+                    logger.error(f"При получении подробной информации о новых заявках произошла ошибка: {e=}")
         else:
             logger.error("❌ Авторизация не прошла — не удалось подтвердить статус авторизации")
 
