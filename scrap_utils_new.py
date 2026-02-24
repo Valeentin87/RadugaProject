@@ -354,7 +354,7 @@ def collect_new_claims_data(driver):
 
 def close_popup_if_exists(driver, wait_timeout=10):
     """
-    Ищет на текущей странице кликабельный элемент с классом 'popup_close' и нажимает на него
+    Ищет на текущей странице кликабельный элемент с классом 'popup__close' и нажимает на него
     для закрытия всплывающего окна.
 
     Args:
@@ -364,12 +364,13 @@ def close_popup_if_exists(driver, wait_timeout=10):
     Returns:
         bool: True, если элемент найден и клик выполнен; False, если элемент не найден
     """
+    logger.info("close_popup_if_exists: стартовал")
     wait = WebDriverWait(driver, wait_timeout)
 
     try:
-        # Ожидаем появления кликабельного элемента с классом popup_close
+        # Ожидаем появления кликабельного элемента с классом popup__close
         close_button = wait.until(
-            EC.element_to_be_clickable((By.CLASS_NAME, "popup_close"))
+            EC.element_to_be_clickable((By.CLASS_NAME, "popup__close"))
         )
 
         # Прокручиваем к элементу, чтобы он был виден на экране
@@ -380,11 +381,12 @@ def close_popup_if_exists(driver, wait_timeout=10):
 
         # Кликаем по элементу
         close_button.click()
-        logging.info("Всплывающее окно успешно закрыто (кнопка с классом 'popup_close')")
+        logger.info("Всплывающее окно успешно закрыто (кнопка с классом 'popup__close')")
+        logger.info("close_popup_if_exists: успешно финишировал")
         return True
 
     except Exception as e:
-        logging.warning(f"Элемент с классом 'popup_close' не найден или не кликабелен: {e}")
+        logger.warning(f"Элемент с классом 'popup__close' не найден или не кликабелен: {e}")
         return False
 
 
@@ -593,7 +595,7 @@ def click_all_claim_details_and_save(driver, wait_timeout=10):
                             time.sleep(2.5)
                             save_claim_details(driver, approve_flag=True)
                         # Закрываем окно
-                        #close_popup_if_exists(driver)
+                        close_popup_if_exists(driver)
                         break
                     else:
                         print("Не удалось сохранить информацию о заявке")
