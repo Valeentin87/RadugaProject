@@ -1,3 +1,10 @@
+import os, sys
+
+from selenium.common import NoSuchElementException
+
+project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(project_directory)
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -11,17 +18,18 @@ from selenium.webdriver.common.keys import Keys
 import logging
 import os
 import time
+from create_bot import logger
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler('scrap_util.log', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# # Настройка логирования
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s [%(levelname)s] %(message)s',
+#     handlers=[
+#         logging.FileHandler('scrap_util.log', encoding='utf-8'),
+#         logging.StreamHandler()
+#     ]
+# )
+# logger = logging.getLogger(__name__)
 
 def create_chrome_options():
     options = webdriver.ChromeOptions()
