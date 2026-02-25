@@ -768,6 +768,29 @@ def is_element_clickable(element):
     )
 
 
+def scroll_to_bottom(driver, max_scrolls=5, delay=1):
+    """Многократно скроллит до низа с задержкой между скроллами"""
+    last_height = driver.execute_script("return document.body.scrollHeight")
+
+    for i in range(max_scrolls):
+        # Скроллим до низа
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        print(f"Скролл #{i+1} до низа выполнен")
+
+        # Ждём загрузки нового контента
+        time.sleep(delay)
+
+        # Получаем новую высоту страницы
+        new_height = driver.execute_script("return document.body.scrollHeight")
+
+        # Если высота не изменилась — достигли конца
+        if new_height == last_height:
+            print("Достигнут конец страницы")
+            break
+
+        last_height = new_height
+
+
 def scroll_and_click_show_more(driver, max_attempts=10, wait_timeout=10):
     """
         Скроллит страницу вниз, ищет кнопку «Показать еще» и нажимает на неё до тех пор,
@@ -789,8 +812,11 @@ def scroll_and_click_show_more(driver, max_attempts=10, wait_timeout=10):
         print(f"\n--- Попытка #{attempt} из {max_attempts} ---")
 
         # Скроллим в самый низ страницы
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        #driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        scroll_to_bottom(driver)
         print("Страница прокручена в самый низ")
+        time.sleep(3)  # ждём 3 секунды
+        print("Подождали 2 секунды после скролла для загрузки контента")
 
         wait = WebDriverWait(driver, wait_timeout)
         button = None
@@ -800,7 +826,7 @@ def scroll_and_click_show_more(driver, max_attempts=10, wait_timeout=10):
             button = wait.until(
                 EC.element_to_be_clickable((
                     By.XPATH,
-                    "//button[.//span[contains(text(), 'Показать еще')]"
+                    "//button//span[contains(text(), 'Показать еще')]/ancestor::button"
                 )))
 
             print("Кнопка «Показать еще» найдена, выполняется клик")
@@ -831,7 +857,7 @@ def scroll_and_click_show_more(driver, max_attempts=10, wait_timeout=10):
             except Exception as click_error:
                 logger.warning(f"Не удалось нажать кнопку «Показать еще»: {click_error}")
                 print(f"Ошибка при клике: {click_error}")
-            break  # Выходим из цикла при ошибке клика
+                break  # Выходим из цикла при ошибке клика
 
         except Exception as e:
             # Элемент не найден — это ожидаемое завершение цикла
