@@ -18,8 +18,9 @@ class Claim(Base):
     """
     Модель для описания информации о заявке для управляющей компании
     """
+    __tablename__ = 'claims'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     claim_id: Mapped[str] = mapped_column(String, unique=True) # номер заявки
     company_name: Mapped[str] = mapped_column(String, nullable=True) # название УК, которой адресована заявка
     appeal_date: Mapped[str] = mapped_column(String, nullable=False) # дата обращения
@@ -67,4 +68,4 @@ if __name__ == '__main__':
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    asyncio.run(create_table)
+    asyncio.run(create_table())
