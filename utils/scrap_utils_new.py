@@ -1,3 +1,4 @@
+import random
 import os, sys
 
 from selenium.common import NoSuchElementException
@@ -767,6 +768,209 @@ def is_element_clickable(element):
     )
 
 
+def scroll_and_click_show_more(driver, max_attempts=10, wait_timeout=10):
+    """
+        Скроллит страницу вниз, ищет кнопку «Показать еще» и нажимает на неё до тех пор,
+        пока кнопка не перестанет быть доступной.
+
+        Args:
+            driver: экземпляр WebDriver
+            max_attempts: максимальное количество попыток (защита от бесконечного цикла)
+            wait_timeout: время ожидания элемента в секундах
+
+        Returns:
+            int: количество успешно выполненных кликов по кнопке «Показать еще»
+    """
+    click_count = 0
+    attempt = 1
+
+    print("scroll_and_click_show_more: Старт поиска и нажатия кнопки «Показать еще»")
+    while attempt <= max_attempts:
+        print(f"\n--- Попытка #{attempt} из {max_attempts} ---")
+
+        # Скроллим в самый низ страницы
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        print("Страница прокручена в самый низ")
+
+        wait = WebDriverWait(driver, wait_timeout)
+        button = None
+
+        try:
+            # Поиск кнопки по тексту внутри span
+            button = wait.until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//button[.//span[contains(text(), 'Показать еще')]"
+                )))
+
+            print("Кнопка «Показать еще» найдена, выполняется клик")
+
+            # Прокрутка к элементу для надёжности
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});",
+                button
+            )
+
+            # Кликаем по кнопке
+            try:
+                button.click()
+                logger.info(f"Кнопка «Показать еще» успешно нажата (клик #{click_count + 1})")
+                print(f"Кнопка «Показать еще» успешно нажата (клик #{click_count + 1})")
+
+                # Увеличиваем счётчик кликов
+                click_count += 1
+
+                # Ждём случайное время от 5 до 10 секунд
+                wait_time = random.uniform(5, 10)
+                print(f"Ожидание {wait_time:.1f} секунд перед следующей попыткой")
+                time.sleep(wait_time)
+
+                # Обновляем страницу или ждём загрузки нового контента
+                # (можно добавить проверку загрузки контента при необходимости)
+
+            except Exception as click_error:
+                logger.warning(f"Не удалось нажать кнопку «Показать еще»: {click_error}")
+                print(f"Ошибка при клике: {click_error}")
+            break  # Выходим из цикла при ошибке клика
+
+        except Exception as e:
+            # Элемент не найден — это ожидаемое завершение цикла
+            if "TimeoutException" in str(type(e)) or "NoSuchElementException" in str(type(e)):
+                print("Кнопка «Показать еще» больше не найдена — достигнут конец списка")
+                break
+            else:
+                # Другие ошибки — продолжаем попытки
+                print(f"Неожиданная ошибка при поиске кнопки: {e}")
+                attempt += 1
+                continue
+        finally:        
+            attempt += 1
+
+            # Дополнительная проверка: если после клика кнопка всё ещё видна, продолжаем
+            # В противном случае — завершаем цикл
+            if button and not button.is_displayed():
+                print("Кнопка больше не отображается после клика — завершаем работу")
+                break
+
+    print(f"\n--- Завершено: выполнено {click_count} кликов по кнопке «Показать еще» ---")
+    return click_count
+
+
+
+# ------ ниже тестовая main ---------------
+
+
+
+
+
+def main():
+    driver = None
+    try:
+        driver = create_driver()
+        wait = WebDriverWait(driver, 60)
+
+        # 1. Загрузка страницы
+        driver.get("https://eds.mosreg.ru/#login")
+        logger.info(f"Страница загружена: {driver.current_url}")
+        save_page_html(driver, 'login_page.html', 'work_parsed_pages')
+
+        # 2. Удаление оверлея
+        remove_overlay(driver)
+
+        # 3. Поиск контейнера формы
+        logger.info("Ожидание видимости контейнера формы...")
+        form_container = wait.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, '.login-form'))
+        )
+        if form_container:
+            logger.info("Контейнер формы найден - выделяем его...")
+            driver.execute_script("arguments[0].style.border='3px solid red'", form_container)
+
+        # 4. Поле email
+        logger.info("Поиск поля email...")
+        email_field = wait.until(
+            EC.element_to_be_clickable((
+                By.CSS_SELECTOR,
+                'dd-lib-input[formcontrolname="login-form-email"] input'
+            ))
+        )
+        if email_field:
+            logger.info("Поле email найдено - выделяем его...")
+            driver.execute_script("arguments[0].style.background='yellow'", email_field)
+        email_field.clear()
+        email_field.send_keys("5003108379")
+        logger.info(f"Email введён: {email_field.get_attribute('value')}")
+
+        # 5. Поле пароля
+        password_field = wait.until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//input[@placeholder='Пароль' and @type='password']"
+            ))
+        )
+        logger.info("Поле пароля найдено")
+        password_field.clear()
+        
+        password_field.send_keys("pVK8Wtx7")
+        logger.info(f"Пароль введён: {len(password_field.get_attribute('value'))} символов")
+
+        # 6. Кнопка «Авторизоваться»
+        submit_button = wait.until(
+    EC.element_to_be_clickable((
+        By.XPATH,
+        "//button[contains(@class, 'lib-button') and contains(@class, 'green') and @type='submit']"
+    ))
+)
+        logger.info("Кнопка «Авторизоваться» найдена")
+
+        # 7. Проверка состояния кнопки ДО клика
+        is_disabled = submit_button.get_attribute("disabled")
+        logger.info(f"Кнопка заблокирована (disabled): {is_disabled}")
+
+        if is_disabled:
+            logger.error("Кнопка 'Авторизоваться' заблокирована. Пытаемся разблокировать через JS...")
+            try:
+                driver.execute_script("arguments[0].removeAttribute('disabled');", submit_button)
+                time.sleep(1)
+                is_disabled_after = submit_button.get_attribute("disabled")
+                logger.info(f"Состояние кнопки после разблокировки: disabled={is_disabled_after}")
+            except Exception as e:
+                logger.error(f"Не удалось разблокировать кнопку: {e}")
+                return
+
+        # 8. Клик по кнопке (с повторами)
+        if click_with_retries(submit_button, driver):
+            logger.info("Авторизация инициирована (клик).")
+        else:
+            # Если клики не сработали — пробуем Enter
+            logger.warning("Клик не сработал. Пробуем отправить Enter на кнопку.")
+            submit_button.send_keys(Keys.ENTER)
+            logger.info("Отправлен Enter на кнопку «Авторизоваться».")
+
+        # 9. Ждём полной загрузки страницы после авторизации
+        logger.info("Ожидание загрузки страницы после авторизации...")
+        wait_for_page_load(driver, timeout=30)
+
+        # 10. Собираем JS‑ошибки после действия
+        get_browser_logs(driver)
+
+        # 11. Сохранение финальной страницы
+        save_page_html(driver, 'main_company.html', 'work_parsed_pages')
+
+        
+        # 12. Комплексная проверка авторизации
+        if check_authorization_status(driver):
+            logger.info("✅ Авторизация успешна: все проверки пройдены")
+
+        # 13. Пытаемся нажать по кнопке ПОКАЗАТЬ ЕЩЁ
+        scroll_and_click_show_more(driver)
+    except Exception as e:
+        logger.error(f"Произошла ошибка: {e=}")
+        
+
+
+
+'''
 
 def main():
     driver = None
@@ -961,6 +1165,8 @@ def main():
             input("Чтобы остановить скрипт, нажмите Enter")  # Ожидание ввода от пользователя
             driver.quit()
             logger.info("Драйвер закрыт")
+
+'''
 
 if __name__ == "__main__":
     main()
