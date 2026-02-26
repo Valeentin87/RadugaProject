@@ -2,7 +2,7 @@ from copy import deepcopy
 import random
 import os, sys
 
-from selenium.common import NoSuchElementException
+
 
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
@@ -17,6 +17,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException, ElementClickInterceptedException
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
+from selenium.common import NoSuchElementException
+from bs4 import BeautifulSoup
 import logging
 import os
 import time
@@ -643,23 +645,78 @@ def get_info_of_table_with_claims(driver, wait_timeout=10):
         # приступаем к поиску элементов с аттрибутом role ='row'
         try:
             row_elements = wait.until(
-            EC.presence_of_all_elements_located((By.XPATH, "./ancestor::tr[@role='row']"))
+            EC.presence_of_all_elements_located((By.CLASS_NAME, "cdk-row"))
             )
-            print(f"Найдено элементов с аттрибутом role='row': {len(row_elements)}")
+            print(f"Найдено элементов с классом class='cdk-row': {len(row_elements)}")
         except Exception:
-            print("Не удалось найти строки таблицы с аттрибутом role='row'")
+            print("Не удалось найти строки таблицы с классом class='cdk-row'")
             return all_claims_by_row
         
         if len(status_elements) == len(row_elements):
             print("Количество строк таблицы равно количеству заявок")
 
-        for element in row_elements[-10:]:
-            all_claims_by_row.append(element.get_attribute("outerHTML"))
+        if len(row_elements) >= -10:
+            for element in row_elements[-10:]:
+                all_claims_by_row.append(element.get_attribute("outerHTML"))
+        else:
+            for element in row_elements:
+                all_claims_by_row.append(element.get_attribute("outerHTML"))
         
+        print(f"Информация по первому элементу-строке:\n{all_claims_by_row[0]}")
         return all_claims_by_row
     
     except Exception as e:
         print(f"get_info_of_table_with_claims: При получении информации о строках таблицы с заявками произошла ошибка  {e}")
+
+
+def parse_claim_from_html(html_string):
+    """
+    Извлекает информацию о заявке из HTML-строки.
+
+    Args:
+        html_string (str): HTML-код строки таблицы с заявкой
+
+    Returns:
+        dict: Словарь с полями заявки
+    """
+    soup = BeautifulSoup(html_string, 'html.parser')
+
+    # Находим все ячейки <td> в строке
+    cells = soup.find_all('td')
+
+    # Извлекаем данные из каждой ячейки по порядку
+    claim_id = cells[0].get_text(strip=True) if len(cells) > 0 else ""
+    appeal_date = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+    description = cells[2].get_text(strip=True) if len(cells) > 2 else ""
+    address = cells[3].get_text(strip=True) if len(cells) > 3 else ""
+
+    # Для срочности (urgency) — ищем внутри ячейки с типом заявки
+    urgency = ""
+    if len(cells) > 4:
+        urgency_span = cells[4].find('span')
+        if urgency_span:
+            urgency = urgency_span.get_text(strip=True)
+
+    due_date = cells[5].get_text(strip=True) if len(cells) > 5 else ""
+
+    # Для статуса (status) — ищем внутри ячейки со статусом
+    status = ""
+    if len(cells) > 6:
+        status_span = cells[6].find('span', class_='claim-status-name')
+        if status_span:
+            status = status_span.get_text(strip=True)
+
+    return {
+        "claim_id": claim_id,
+        "company_name": "",  # В HTML нет данных о компании
+        "appeal_date": appeal_date,
+        "description": description,
+        "address": address,
+        "urgency": urgency,
+        "due_date": due_date,
+        "status": status
+    }
+
 
 
 def save_claim_details(driver, claim_id="unknown", approve_flag=False):
@@ -829,7 +886,7 @@ def scroll_to_bottom(driver, max_scrolls=5, delay=1):
         last_height = new_height
 
 
-def scroll_and_click_show_more(driver, max_attempts=10, wait_timeout=10):
+def scroll_and_click_show_more(driver, max_attempts=3, wait_timeout=10):
     """
         Скроллит страницу вниз, ищет кнопку «Показать еще» и нажимает на неё до тех пор,
         пока кнопка не перестанет быть доступной.
@@ -1039,7 +1096,7 @@ def main():
 
 
         # 13. Пытаемся нажать по кнопке ПОКАЗАТЬ ЕЩЁ
-        #claims_row_info = scroll_and_click_show_more(driver) !!!!!!!!!!!!!!!!!!!
+        claims_row_info = scroll_and_click_show_more(driver) 
     except Exception as e:
         logger.error(f"Произошла ошибка: {e=}")
         
