@@ -1,3 +1,4 @@
+from copy import deepcopy
 import random
 import os, sys
 
@@ -623,6 +624,43 @@ def click_all_claim_details_and_save(driver, wait_timeout=10):
         return all_claims_info
 
 
+def get_info_of_table_with_claims(driver, wait_timeout=10):
+    """
+        Ищет элементы с классом 'claim-status' - все строки таблицы с заявками и сохраняем последние 10 из них.
+    """
+    wait = WebDriverWait(driver, wait_timeout)
+    all_claims_by_row = []
+    try:
+        # Ждём появления элементов с классом claim-status
+        status_elements = wait.until(
+            EC.presence_of_all_elements_located((By.CLASS_NAME, "claim-status"))
+        )
+        if not status_elements:
+            print("Не найдено элементов с классом 'claim-status'")
+            return all_claims_by_row
+        print(f"Найдено элементов с классом 'claim-status': {len(status_elements)}")
+
+        # приступаем к поиску элементов с аттрибутом role ='row'
+        try:
+            row_elements = wait.until(
+            EC.presence_of_all_elements_located((By.XPATH, "./ancestor::tr[@role='row']"))
+            )
+            print(f"Найдено элементов с аттрибутом role='row': {len(row_elements)}")
+        except Exception:
+            print("Не удалось найти строки таблицы с аттрибутом role='row'")
+            return all_claims_by_row
+        
+        if len(status_elements) == len(row_elements):
+            print("Количество строк таблицы равно количеству заявок")
+
+        for element in row_elements[-10:]:
+            all_claims_by_row.append(element.get_attribute("outerHTML"))
+        
+        return all_claims_by_row
+    
+    except Exception as e:
+        print(f"get_info_of_table_with_claims: При получении информации о строках таблицы с заявками произошла ошибка  {e}")
+
 
 def save_claim_details(driver, claim_id="unknown", approve_flag=False):
     """
@@ -807,6 +845,12 @@ def scroll_and_click_show_more(driver, max_attempts=10, wait_timeout=10):
     click_count = 0
     attempt = 1
 
+    html_info_of_all_claims = []
+
+    iter_claims_info = get_info_of_table_with_claims(driver)
+
+    html_info_of_all_claims.extend(deepcopy(iter_claims_info))
+
     print("scroll_and_click_show_more: Старт поиска и нажатия кнопки «Показать еще»")
     while attempt <= max_attempts:
         print(f"\n--- Попытка #{attempt} из {max_attempts} ---")
@@ -817,6 +861,10 @@ def scroll_and_click_show_more(driver, max_attempts=10, wait_timeout=10):
         print("Страница прокручена в самый низ")
         time.sleep(3)  # ждём 3 секунды
         print("Подождали 2 секунды после скролла для загрузки контента")
+
+        
+        current_iter_claims_info = get_info_of_table_with_claims(driver)
+        html_info_of_all_claims.extend(deepcopy(current_iter_claims_info))
 
         wait = WebDriverWait(driver, wait_timeout)
         button = None
@@ -879,7 +927,8 @@ def scroll_and_click_show_more(driver, max_attempts=10, wait_timeout=10):
                 break
 
     print(f"\n--- Завершено: выполнено {click_count} кликов по кнопке «Показать еще» ---")
-    return click_count
+    print(f"Собрана информация о  {len(html_info_of_all_claims)} заявках")
+    return click_count, html_info_of_all_claims
 
 
 
@@ -988,8 +1037,9 @@ def main():
         if check_authorization_status(driver):
             logger.info("✅ Авторизация успешна: все проверки пройдены")
 
+
         # 13. Пытаемся нажать по кнопке ПОКАЗАТЬ ЕЩЁ
-        scroll_and_click_show_more(driver)
+        #claims_row_info = scroll_and_click_show_more(driver) !!!!!!!!!!!!!!!!!!!
     except Exception as e:
         logger.error(f"Произошла ошибка: {e=}")
         
