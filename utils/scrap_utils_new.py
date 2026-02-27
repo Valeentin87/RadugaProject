@@ -1,8 +1,7 @@
 from copy import deepcopy
+import json
 import random
 import os, sys
-
-
 
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
@@ -17,12 +16,13 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException, ElementClickInterceptedException
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
-from selenium.common import NoSuchElementException
+from selenium.common import NoSuchElementException, StaleElementReferenceException
 from bs4 import BeautifulSoup
 import logging
 import os
 import time
 from create_bot import logger
+from db_handler.base import add_new_claim
 
 # # Настройка логирования
 # logging.basicConfig(
@@ -886,7 +886,7 @@ def scroll_to_bottom(driver, max_scrolls=5, delay=1):
         last_height = new_height
 
 
-def scroll_and_click_show_more(driver, max_attempts=3, wait_timeout=10):
+def scroll_and_click_show_more(driver, max_attempts=2, wait_timeout=10):
     """
         Скроллит страницу вниз, ищет кнопку «Показать еще» и нажимает на неё до тех пор,
         пока кнопка не перестанет быть доступной.
@@ -904,9 +904,9 @@ def scroll_and_click_show_more(driver, max_attempts=3, wait_timeout=10):
 
     html_info_of_all_claims = []
 
-    iter_claims_info = get_info_of_table_with_claims(driver)
+    #iter_claims_info = get_info_of_table_with_claims(driver)
 
-    html_info_of_all_claims.extend(deepcopy(iter_claims_info))
+    #html_info_of_all_claims.extend(deepcopy(iter_claims_info))
 
     print("scroll_and_click_show_more: Старт поиска и нажатия кнопки «Показать еще»")
     while attempt <= max_attempts:
@@ -991,21 +991,90 @@ def scroll_and_click_show_more(driver, max_attempts=3, wait_timeout=10):
 
 # ------ ниже тестовая main ---------------
 
+# login="5003108379"
+# password="pVK8Wtx7"
+
+COMPANY_ACCESS = os.getenv('COMPANY_ACCESS')
+company_access = json.loads(COMPANY_ACCESS)
+# company_name = ''
+# for key, value in company_access.items():
+#     if value[1] == login:
+#         company_name = value[0]
+
+
+
+def scroll_and_click_login_link(driver, timeout=30):
+    """
+    Гарантированно скроллит страницу наверх, ищет и нажимает на элемент с классом
+    header-login__link и текстом «Войти».
+
+    Args:
+        driver: экземпляр WebDriver
+        timeout: время ожидания элемента в секундах
+
+    Returns:
+        bool: True, если элемент найден и нажата кнопка, False — в случае ошибки
+    """
+    try:
+        # 1. Гарантированный скролл наверх
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(0.5)  # небольшая пауза после скролла
+
+        # 2. Ожидание появления кликабельного элемента
+        wait = WebDriverWait(driver, timeout)
+        element = wait.until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//div[@class='header-login__link' and contains(text(), 'Войти')]"
+            ))
+        )
+
+        # 3. Дополнительная проверка видимости и возможности клика
+        if element.is_displayed() and element.is_enabled():
+            # 4. Попытка нажать (с обработкой возможных ошибок)
+            try:
+                element.click()
+                print("✅ Элемент «Войти» успешно найден и нажата кнопка")
+                return True
+            except ElementClickInterceptedException:
+                # Если элемент перекрыт, используем JS‑клик
+                driver.execute_script("arguments[0].click();", element)
+                print("✅ Элемент «Войти» нажата через JavaScript")
+                return True
+        else:
+            print("❌ Элемент найден, но не кликаем/не виден")
+            return False
+
+    except TimeoutException:
+        print("❌ Элемент с текстом «Войти» не найден за отведённое время")
+        return False
+    except Exception as e:
+        print(f"❌ Произошла ошибка: {e}")
+        return False
 
 
 
 
-def main():
+async def filled_claims_to_base(login:str, password:str, company_name:str):
+    """Отвечает за наполнение базы данных информацией обо всех имеющихся заявказ
+    по всем управляющим компаниям"""
+    claims_row_info = None
+    logger.info(f"Приступили к обновлению базы данных по всем заявкам для УК {company_name}")
+    print(f"Приступили к обновлению базы данных по всем заявкам для УК {company_name}")
+
     driver = None
     try:
         driver = create_driver()
         wait = WebDriverWait(driver, 60)
 
         # 1. Загрузка страницы
-        driver.get("https://eds.mosreg.ru/#login")
+        driver.get("https://eds.mosreg.ru/")
         logger.info(f"Страница загружена: {driver.current_url}")
         save_page_html(driver, 'login_page.html', 'work_parsed_pages')
 
+        
+        scroll_and_click_login_link(driver)
+        
         # 2. Удаление оверлея
         remove_overlay(driver)
 
@@ -1030,7 +1099,8 @@ def main():
             logger.info("Поле email найдено - выделяем его...")
             driver.execute_script("arguments[0].style.background='yellow'", email_field)
         email_field.clear()
-        email_field.send_keys("5003108379")
+        email_field.send_keys(login)
+        print("Email введен")
         logger.info(f"Email введён: {email_field.get_attribute('value')}")
 
         # 5. Поле пароля
@@ -1043,7 +1113,8 @@ def main():
         logger.info("Поле пароля найдено")
         password_field.clear()
         
-        password_field.send_keys("pVK8Wtx7")
+        password_field.send_keys(password)
+        print("Пароль введен введен")
         logger.info(f"Пароль введён: {len(password_field.get_attribute('value'))} символов")
 
         # 6. Кнопка «Авторизоваться»
@@ -1097,11 +1168,401 @@ def main():
 
         # 13. Пытаемся нажать по кнопке ПОКАЗАТЬ ЕЩЁ
         claims_row_info = scroll_and_click_show_more(driver) 
+        
+        # 14. Добавляем информацию в базу данных по каждой заявке
+        for row_info in claims_row_info[1]:
+            current_claim_info = dict()
+            current_claim_info = parse_claim_from_html(row_info)
+            current_claim_info.update(company_name=company_name)
+            new_claim = await add_new_claim(claim_info=current_claim_info)
     except Exception as e:
         logger.error(f"Произошла ошибка: {e=}")
+    finally:
+        scroll_and_click_header_then_logout(driver)
+        if driver:
+            driver.quit()
+            logger.info("Драйвер закрыт")
+
+
+
+def scroll_and_click_header_then_logout(driver, timeout=30):
+    """
+    1. Скроллит страницу наверх.
+    2. Находит и нажимает на элемент header-login__link.
+    3. Ищет во всплывающем контенте кнопку «Выйти» и нажимает её.
+
+    Args:
+        driver: экземпляр WebDriver
+        timeout: время ожидания элементов в секундах
+
+    Returns:
+        bool: True, если все действия выполнены успешно, False — в случае ошибки
+    """
+    try:
+        # 1. Гарантированный скролл наверх
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(0.5)
+
+        # 2. Поиск и клик по элементу header-login__link
+        wait = WebDriverWait(driver, timeout)
+        header_element = wait.until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//div[@class='header-login__link']"
+            )
+        ))
+
+        if header_element.is_displayed() and header_element.is_enabled():
+            try:
+                header_element.click()
+                print("✅ Элемент header-login__link успешно найден и нажата кнопка")
+            except ElementClickInterceptedException:
+                driver.execute_script("arguments[0].click();", header_element)
+                print("✅ Элемент header-login__link нажата через JavaScript")
+        else:
+            print("❌ Элемент header-login__link найден, но не кликаем/не виден")
+            return False
+
+        # Небольшая пауза для появления всплывающего контента
+        time.sleep(1)
+
+        # 3. Поиск кнопки «Выйти» во всплывающем контенте
+        logout_element = wait.until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//*[contains(text(), 'Выйти')]"
+            )
+        ))
+
+        if logout_element.is_displayed() and logout_element.is_enabled():
+            try:
+                logout_element.click()
+                print("✅ Кнопка «Выйти» успешно найдена и нажата")
+                return True
+            except ElementClickInterceptedException:
+                driver.execute_script("arguments[0].click();", logout_element)
+                print("✅ Кнопка «Выйти» нажата через JavaScript")
+                return True
+        else:
+            print("❌ Кнопка «Выйти» найдена, но не кликабельна/не видна")
+            return False
+
+    except TimeoutException as e:
+        if "header-login__link" in str(e):
+            print("❌ Элемент header-login__link не найден за отведённое время")
+        elif "Выйти" in str(e):
+            print("❌ Кнопка «Выйти» не найдена во всплывающем контенте за отведённое время")
+        return False
+    except Exception as e:
+        print(f"❌ Произошла ошибка: {e}")
+        return False
+
+
+
+
+
+async def filled_base_of_all_companyes():
+    login = ''
+    password = ''
+    company_name = ''
+
+    for key, value in company_access.items():
+        company_name = value[0]
+        login = value[1]
+        password = value[2]
+        await filled_claims_to_base(login, password, company_name) 
+
+    logger.info(f"Наполнение базы данных по всем компаниям успешно проведено")
+    print(f"filled_base_of_all_companyes: Наполнение базы данных по всем компаниям успешно проведено")
+
+
+
+def search_and_extract_data(company_name:str, search_text="6213774", timeout=10):
+    """
+    Выполняет поиск по странице: вводит текст в поле, нажимает кнопку поиска, извлекает данные.
+
+    Args:
+        driver: экземпляр WebDriver
+        search_text: строка для ввода в поле поиска
+        timeout: время ожидания элементов в секундах
+
+    Returns:
+        tuple: (введённый_текст, статус_заявки, срок_выполнения) или (введённый_текст, None, None) при ошибке
+    """
+    # ищем пароль и логин управляющей компании, для которой ищем заявку
+    
+    login, password = [ (value[1], value[2]) for key, value in company_access.items() if value[0].lower() == company_name.lower()][0]
+
+    logger.info(f"Приступили к поиску заявки с ID = {search_text} для УК {company_name} с целью обновления её статуса")
+    print(f"Приступили к поиску заявки с ID = {search_text} для УК {company_name} с целью обновления её статуса")
+
+    driver = None
+    try:
+        driver = create_driver()
+        wait = WebDriverWait(driver, 60)
+
+        # 1. Загрузка страницы
+        driver.get("https://eds.mosreg.ru/")
+        logger.info(f"Страница загружена: {driver.current_url}")
+        save_page_html(driver, 'login_page.html', 'work_parsed_pages')
+
+        
+        scroll_and_click_login_link(driver)
+        
+        # 2. Удаление оверлея
+        remove_overlay(driver)
+
+        # 3. Поиск контейнера формы
+        logger.info("Ожидание видимости контейнера формы...")
+        form_container = wait.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, '.login-form'))
+        )
+        if form_container:
+            logger.info("Контейнер формы найден - выделяем его...")
+            driver.execute_script("arguments[0].style.border='3px solid red'", form_container)
+
+        # 4. Поле email
+        logger.info("Поиск поля email...")
+        email_field = wait.until(
+            EC.element_to_be_clickable((
+                By.CSS_SELECTOR,
+                'dd-lib-input[formcontrolname="login-form-email"] input'
+            ))
+        )
+        if email_field:
+            logger.info("Поле email найдено - выделяем его...")
+            driver.execute_script("arguments[0].style.background='yellow'", email_field)
+        email_field.clear()
+        email_field.send_keys(login)
+        print("Email введен")
+        logger.info(f"Email введён: {email_field.get_attribute('value')}")
+
+        # 5. Поле пароля
+        password_field = wait.until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//input[@placeholder='Пароль' and @type='password']"
+            ))
+        )
+        logger.info("Поле пароля найдено")
+        password_field.clear()
+        
+        password_field.send_keys(password)
+        print("Пароль введен введен")
+        logger.info(f"Пароль введён: {len(password_field.get_attribute('value'))} символов")
+
+        # 6. Кнопка «Авторизоваться»
+        submit_button = wait.until(
+    EC.element_to_be_clickable((
+        By.XPATH,
+        "//button[contains(@class, 'lib-button') and contains(@class, 'green') and @type='submit']"
+    ))
+)
+        logger.info("Кнопка «Авторизоваться» найдена")
+
+        # 7. Проверка состояния кнопки ДО клика
+        is_disabled = submit_button.get_attribute("disabled")
+        logger.info(f"Кнопка заблокирована (disabled): {is_disabled}")
+
+        if is_disabled:
+            logger.error("Кнопка 'Авторизоваться' заблокирована. Пытаемся разблокировать через JS...")
+            try:
+                driver.execute_script("arguments[0].removeAttribute('disabled');", submit_button)
+                time.sleep(1)
+                is_disabled_after = submit_button.get_attribute("disabled")
+                logger.info(f"Состояние кнопки после разблокировки: disabled={is_disabled_after}")
+            except Exception as e:
+                logger.error(f"Не удалось разблокировать кнопку: {e}")
+                return
+
+        # 8. Клик по кнопке (с повторами)
+        if click_with_retries(submit_button, driver):
+            logger.info("Авторизация инициирована (клик).")
+        else:
+            # Если клики не сработали — пробуем Enter
+            logger.warning("Клик не сработал. Пробуем отправить Enter на кнопку.")
+            submit_button.send_keys(Keys.ENTER)
+            logger.info("Отправлен Enter на кнопку «Авторизоваться».")
+
+        # 9. Ждём полной загрузки страницы после авторизации
+        logger.info("Ожидание загрузки страницы после авторизации...")
+        wait_for_page_load(driver, timeout=30)
+
+        # 10. Собираем JS‑ошибки после действия
+        get_browser_logs(driver)
+
+        # 11. Сохранение финальной страницы
+        save_page_html(driver, 'main_company.html', 'work_parsed_pages')
+
+        
+        # 12. Комплексная проверка авторизации
+        if check_authorization_status(driver):
+            logger.info("✅ Авторизация успешна: все проверки пройдены")
+        
+        try:
+                
+            wait = WebDriverWait(driver, timeout)
+
+            actual_status_info = None
+
+            if not isinstance(search_text, list):
+                # Обработка одиночной заявки
+                print(f"🔎 Обработка одиночной заявки: {search_text}")
+
+                try:
+                    # 1. Поиск и ввод в поле поиска
+                    print("🔎 Ищем поле ввода...")
+                    input_field = wait.until(
+                        EC.presence_of_element_located((
+                            By.XPATH,
+                    "//input[contains(@class, 'search-input') and @type='text']"
+                ))
+                    )
+                    print("✅ Поле ввода найдено")
+
+                    input_field.clear()
+                    input_field.send_keys(search_text)
+                    print(f"📝 Текст '{search_text}' введён в поле поиска")
+
+                    # 2. Поиск и клик по кнопке поиска
+                    print("🔎 Ищем кнопку поиска...")
+                    search_button = wait.until(
+                        EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//div[contains(@class, 'head-filter__search_event') and contains(text(), 'Искать по всем заявкам')]"
+                ))
+                    )
+                    search_button.click()
+                    print("✅ Кнопка «Искать по всем заявкам» нажата")
+
+                    # Ожидание стабилизации DOM
+                    time.sleep(2)
+                    wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
+
+                    # Ждём исчезновения спиннера загрузки (если есть)
+                    try:
+                        wait.until(EC.invisibility_of_element_located((By.ID, "loading-spinner")))
+                    except:
+                        pass
+
+                    # 3. Поиск статуса заявки с обработкой Stale Element
+                    print("🔎 Ищем статус заявки...")
+                    status_element = _find_element_with_retry(
+                        wait,
+                        By.XPATH,
+                        "//span[contains(@class, 'claim-status-name')]",
+                        max_attempts=3
+                    )
+                    claim_status = status_element.text.strip() if status_element else None
+                    print(f"✅ Найден статус заявки: '{claim_status}'")
+
+                    # 4. Поиск срока выполнения с обработкой Stale Element
+                    print("🔎 Ищем срок выполнения...")
+                    deadline_element = _find_element_with_retry(
+                        wait,
+                        By.XPATH,
+                        "//td[contains(@class, 'cdk-column-deadline')]//span",
+                        max_attempts=3
+                    )
+                    deadline = deadline_element.text.strip() if deadline_element else None
+                    print(f"✅ Найден срок выполнения: '{deadline}'")
+
+                    return (search_text, claim_status, deadline)
+
+                except Exception as e:
+                    print(f"❌ Ошибка при обработке заявки {search_text}: {e}")
+                    return (search_text, None, None)
+
+            else:
+                # Обработка нескольких заявок
+                print("Планируем актуализировать информацию по нескольким заявкам")
+                actual_status_info = list()
+
+                for claim_id in search_text:
+                    print(f"\n🔎 Обработка заявки: {claim_id}")
+
+                    try:
+                        # 1. Поиск и ввод в поле поиска
+                        print("🔎 Ищем поле ввода...")
+                        input_field = wait.until(
+                            EC.presence_of_element_located((
+                        By.XPATH,
+                        "//input[contains(@class, 'search-input') and @type='text']"
+                    ))
+                        )
+                        print("✅ Поле ввода найдено")
+
+                        input_field.clear()
+                        input_field.send_keys(claim_id)
+                        print(f"📝 Текст '{claim_id}' введён в поле поиска")
+
+                        # 2. Поиск и клик по кнопке поиска
+                        print("🔎 Ищем кнопку поиска...")
+                        search_button = wait.until(
+                            EC.element_to_be_clickable((
+                        By.XPATH,
+                        "//div[contains(@class, 'head-filter__search_event') and contains(text(), 'Искать по всем заявкам')]"
+                    ))
+                        )
+                        search_button.click()
+                        print("✅ Кнопка «Искать по всем заявкам» нажата")
+
+                        # Ожидание стабилизации DOM
+                        time.sleep(2)
+                        wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
+
+                        # Ждём исчезновения спиннера загрузки
+                        try:
+                            wait.until(EC.invisibility_of_element_located((By.ID, "loading-spinner")))
+                        except:
+                            pass
+
+                        # 3. Поиск статуса заявки с повторными попытками
+                        print("🔎 Ищем статус заявки...")
+                        status_element = _find_element_with_retry(wait, By.XPATH, "//span[contains(@class, 'claim-status-name')]", max_attempts=3)
+                        claim_status = status_element.text.strip() if status_element else None
+                        print(f"✅ Найден статус заявки: '{claim_status}'")
+
+                        # 4. Поиск срока выполнения с повторными попытками
+                        print("🔎 Ищем срок выполнения...")
+                        deadline_element = _find_element_with_retry(wait, By.XPATH, "//td[contains(@class, 'cdk-column-deadline')]//span", max_attempts=3)
+                        deadline = deadline_element.text.strip() if deadline_element else None
+                        print(f"✅ Найден срок выполнения: '{deadline}'")
+
+                        actual_status_info.append((claim_id, claim_status, deadline))
+
+
+                    except Exception as e:
+                        print(f"❌ Ошибка при обработке заявки {claim_id}: {e}")
+                        actual_status_info.append((claim_id, None, None))
+
+                print(f"Актуальная информация по всем заявкам:\n{actual_status_info}")
+                return actual_status_info
+
+        except Exception as e:
+            print(f"❌ search_and_extract_data: Произошла ошибка: {e}")
+        finally:
+            if driver:
+                driver.quit()
+                print("search_and_extract_data: Драйвер закрыт")
+    
+    except Exception as e:
+        print(f"search_and_extract_data: Произошла ошибка: {e}")
+        return None
         
 
-
+def _find_element_with_retry(wait, by, locator, max_attempts=3):
+    """Вспомогательная функция для поиска элемента с повторными попытками при StaleElement"""
+    for attempt in range(max_attempts):
+        try:
+            element = wait.until(EC.presence_of_element_located((by, locator)))
+            return element
+        except StaleElementReferenceException:
+            if attempt == max_attempts - 1:
+                raise
+            print(f"⚠️ Попытка {attempt + 1}: элемент устарел, повторяем поиск...")
+            time.sleep(1)
+    return None
 
 '''
 
@@ -1302,4 +1763,11 @@ def main():
 '''
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+
+    #asyncio.run(filled_base_of_all_companyes())
+    #search_and_extract_data("Радуга", "6185598")
+    search_and_extract_data("Радуга", ["6185598", "6184252", "6180019"])
+    
+    
+    

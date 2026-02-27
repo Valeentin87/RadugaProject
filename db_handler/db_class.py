@@ -13,4 +13,4 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 
 class Base(AsyncAttrs, DeclarativeBase):
-    db_name = 'db.food_finder_base'
+    db_name = 'db.claims_base'
