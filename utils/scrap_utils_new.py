@@ -348,11 +348,11 @@ def collect_new_claims_data(driver):
 
         # Добавляем данные в словарь
         claims_data[claim_id] = {
-            "Дата обращения": date_text,
-            "Категория": category_text,
+            "appeal_date": date_text,
+            "description": category_text,
             "Адрес": address_text,
-            "Срочность": urgency_text,
-            "Срок": deadline_text
+            "urgency": urgency_text,
+            "due_date": deadline_text
         }
 
     return claims_data
@@ -1564,19 +1564,43 @@ def _find_element_with_retry(wait, by, locator, max_attempts=3):
             time.sleep(1)
     return None
 
-'''
 
-def main():
+async def find_info_of_new_claims():
+    """Собирает информацию о новых заявках по всем управляющим
+    компаниям и принимает их В РАБОТУ"""
+    
+    new_claims_by_company = dict()
+
+    for value in list(company_access.values()):
+        print(f"Получаем информацию по новым заявкам для управляющей компании {value[0]}")
+        current_new_claims = find_info_of_new_claims_by_company(value[0])
+        await add_new_claim(current_new_claims)
+        
+        new_claims_by_company.update({f"{value[0]}" : current_new_claims})
+    
+    print(f'find_info_of_new_claims: {new_claims_by_company=}')
+    logger.info(f"{new_claims_by_company=}")
+    return new_claims_by_company
+        
+
+
+
+def find_info_of_new_claims_by_company(company_name:str):
+    
+    login, password = [ (value[1], value[2]) for key, value in company_access.items() if value[0].lower() == company_name.lower()][0]
+    
     driver = None
     try:
         driver = create_driver()
         wait = WebDriverWait(driver, 60)
 
         # 1. Загрузка страницы
-        driver.get("https://eds.mosreg.ru/#login")
+        driver.get("https://eds.mosreg.ru/")
         logger.info(f"Страница загружена: {driver.current_url}")
         save_page_html(driver, 'login_page.html', 'work_parsed_pages')
 
+        
+        scroll_and_click_login_link(driver)
         # 2. Удаление оверлея
         remove_overlay(driver)
 
@@ -1601,7 +1625,7 @@ def main():
             logger.info("Поле email найдено - выделяем его...")
             driver.execute_script("arguments[0].style.background='yellow'", email_field)
         email_field.clear()
-        email_field.send_keys("5003108379")
+        email_field.send_keys(login)
         logger.info(f"Email введён: {email_field.get_attribute('value')}")
 
         # 5. Поле пароля
@@ -1614,7 +1638,7 @@ def main():
         logger.info("Поле пароля найдено")
         password_field.clear()
         
-        password_field.send_keys("pVK8Wtx7")
+        password_field.send_keys(password)
         logger.info(f"Пароль введён: {len(password_field.get_attribute('value'))} символов")
 
         # 6. Кнопка «Авторизоваться»
@@ -1688,16 +1712,17 @@ def main():
                 logger.info(f"Information of new claims: {new_claims_data=}")
             except Exception as e:
                 logger.error(f"Произошла ошибка при получении информации по новым заявкам в виде словаря {e=}")
-
+                
             # 15. Получаем детальную информацию о всех новых заявках
             try:
                 all_claim_info = click_all_claim_details_and_save(driver)
                 if all_claim_info:
                     print("Информация о всех новых заявках:", all_claim_info)
                     logger.info(f"Информация о всех новых заявках: {all_claim_info=}")
+                    return new_claims_data
                 else:
                     print("Не удалось получить информацию о заявках")
-                    logger.warning("Не удалось получить иныормацию о новых заявке. ВОзможно их нет")
+                    logger.warning("Не удалось получить информацию о новых заявках. Возможно их нет")
             except Exception as e:
                     logger.error(f"При получении подробной информации о новых заявках произошла ошибка: {e=}")
         else:
@@ -1755,19 +1780,20 @@ def main():
             driver.save_screenshot('unexpected_error_screenshot.png')
     finally:
         if driver:
-            logger.info("Браузер остаётся открытым. Нажмите Enter в консоли для закрытия...")
-            input("Чтобы остановить скрипт, нажмите Enter")  # Ожидание ввода от пользователя
+            #logger.info("Браузер остаётся открытым. Нажмите Enter в консоли для закрытия...")
+            #input("Чтобы остановить скрипт, нажмите Enter")  # Ожидание ввода от пользователя
             driver.quit()
             logger.info("Драйвер закрыт")
 
-'''
+
 
 if __name__ == "__main__":
     import asyncio
 
     #asyncio.run(filled_base_of_all_companyes())
     #search_and_extract_data("Радуга", "6185598")
-    search_and_extract_data("Радуга", ["6185598", "6184252", "6180019"])
+    #search_and_extract_data("Радуга", ["6185598", "6184252", "6180019"])
+    asyncio.run(find_info_of_new_claims())
     
     
     

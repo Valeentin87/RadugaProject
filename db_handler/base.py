@@ -77,3 +77,43 @@ async def add_new_claim(session, claim_info:dict) -> Claim:
     except Exception as e:
         await session.rollback()
         raise Exception(f"Неожиданная ошибка при работе с заявкой {claim_id}: {e}")
+    
+
+@connection
+async def add_new_claims(session, new_claims_by_company: dict, batch_size: int = 100):
+    """Добавляет информацию о новых заявках, принятых в работу (пакетная обработка)"""
+    items = list(new_claims_by_company.items())
+    total_processed = 0
+
+    for i in range(0, len(items), batch_size):
+        batch = items[i:i + batch_size]
+        try:
+            async with session.begin():
+                for claim_id, claim_info in batch:
+                    # Проверка существования заявки
+                    result = await session.execute(
+                        select(Claim).where(Claim.claim_id == claim_id)
+                    )
+                    existing_claim = result.scalar_one_or_none()
+
+                    if existing_claim:
+                        await session.delete(existing_claim)
+                        logger.info(f"Удалена существующая запись в таблице __claims__ с {claim_id=}")
+
+                    # Создание новой заявки
+                    new_claim = Claim(claim_id=claim_id, **claim_info)
+                    session.add(new_claim)
+                    logger.info(f"Добавлена запись в таблице __claims__ с {claim_id=}")
+                    total_processed += 1
+
+                    # Логирование прогресса каждые 10 обработанных заявок
+                    if total_processed % 10 == 0:
+                        logger.info(f"Обработано {total_processed}/{len(items)} заявок")
+        except Exception as e:
+            logger.error(f"Ошибка в пакете {i//batch_size + 1}: {e}")
+            raise
+
+    logger.info(f"Успешно обработано {total_processed} заявок")
+    print(f"Успешно обработано {total_processed} заявок")
+
+
