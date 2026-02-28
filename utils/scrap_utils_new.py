@@ -6,6 +6,7 @@ import os, sys
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
 
+import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -22,7 +23,7 @@ import logging
 import os
 import time
 from create_bot import logger
-from db_handler.base import add_new_claim
+from db_handler.base import add_new_claim, add_new_claims
 
 # # Настройка логирования
 # logging.basicConfig(
@@ -350,7 +351,7 @@ def collect_new_claims_data(driver):
         claims_data[claim_id] = {
             "appeal_date": date_text,
             "description": category_text,
-            "Адрес": address_text,
+            "address": address_text,
             "urgency": urgency_text,
             "due_date": deadline_text
         }
@@ -886,7 +887,7 @@ def scroll_to_bottom(driver, max_scrolls=5, delay=1):
         last_height = new_height
 
 
-def scroll_and_click_show_more(driver, max_attempts=2, wait_timeout=10):
+def scroll_and_click_show_more(driver, max_attempts=300, wait_timeout=10):
     """
         Скроллит страницу вниз, ищет кнопку «Показать еще» и нажимает на неё до тех пор,
         пока кнопка не перестанет быть доступной.
@@ -1003,7 +1004,7 @@ company_access = json.loads(COMPANY_ACCESS)
 
 
 
-def scroll_and_click_login_link(driver, timeout=30):
+def scroll_and_click_login_link(driver, timeout=60):
     """
     Гарантированно скроллит страницу наверх, ищет и нажимает на элемент с классом
     header-login__link и текстом «Войти».
@@ -1065,7 +1066,7 @@ async def filled_claims_to_base(login:str, password:str, company_name:str):
     driver = None
     try:
         driver = create_driver()
-        wait = WebDriverWait(driver, 60)
+        wait = WebDriverWait(driver, 30)
 
         # 1. Загрузка страницы
         driver.get("https://eds.mosreg.ru/")
@@ -1238,6 +1239,7 @@ def scroll_and_click_header_then_logout(driver, timeout=30):
             try:
                 logout_element.click()
                 print("✅ Кнопка «Выйти» успешно найдена и нажата")
+                time.sleep(5)
                 return True
             except ElementClickInterceptedException:
                 driver.execute_script("arguments[0].click();", logout_element)
@@ -1277,6 +1279,241 @@ async def filled_base_of_all_companyes():
 
 
 
+def get_jsond_data_by_claim(company_name:str, claim_id:str | list):
+    """Возвращает json данные по заявке"""
+    login, password = [ (value[1], value[2]) for key, value in company_access.items() if value[0].lower() == company_name.lower()][0]
+
+    logger.info(f"Приступили к поиску заявки с ID = {claim_id} для УК {company_name} с целью обновления её статуса")
+    print(f"Приступили к поиску заявки с ID = {claim_id} для УК {company_name} с целью обновления её статуса")
+
+    driver = None
+    try:
+        driver = create_driver()
+        wait = WebDriverWait(driver, 30)
+
+        # 1. Загрузка страницы
+        driver.get("https://eds.mosreg.ru/")
+        logger.info(f"Страница загружена: {driver.current_url}")
+        save_page_html(driver, 'login_page.html', 'work_parsed_pages')
+
+        
+        scroll_and_click_login_link(driver)
+        
+        # 2. Удаление оверлея
+        remove_overlay(driver)
+
+        # 3. Поиск контейнера формы
+        logger.info("Ожидание видимости контейнера формы...")
+        form_container = wait.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, '.login-form'))
+        )
+        if form_container:
+            logger.info("Контейнер формы найден - выделяем его...")
+            driver.execute_script("arguments[0].style.border='3px solid red'", form_container)
+
+        # 4. Поле email
+        logger.info("Поиск поля email...")
+        email_field = wait.until(
+            EC.element_to_be_clickable((
+                By.CSS_SELECTOR,
+                'dd-lib-input[formcontrolname="login-form-email"] input'
+            ))
+        )
+        if email_field:
+            logger.info("Поле email найдено - выделяем его...")
+            driver.execute_script("arguments[0].style.background='yellow'", email_field)
+        email_field.clear()
+        email_field.send_keys(login)
+        print("Email введен")
+        logger.info(f"Email введён: {email_field.get_attribute('value')}")
+
+        # 5. Поле пароля
+        password_field = wait.until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//input[@placeholder='Пароль' and @type='password']"
+            ))
+        )
+        logger.info("Поле пароля найдено")
+        password_field.clear()
+        
+        password_field.send_keys(password)
+        print("Пароль введен введен")
+        logger.info(f"Пароль введён: {len(password_field.get_attribute('value'))} символов")
+
+        # 6. Кнопка «Авторизоваться»
+        submit_button = wait.until(
+    EC.element_to_be_clickable((
+        By.XPATH,
+        "//button[contains(@class, 'lib-button') and contains(@class, 'green') and @type='submit']"
+    ))
+)
+        logger.info("Кнопка «Авторизоваться» найдена")
+
+        # 7. Проверка состояния кнопки ДО клика
+        is_disabled = submit_button.get_attribute("disabled")
+        logger.info(f"Кнопка заблокирована (disabled): {is_disabled}")
+
+        if is_disabled:
+            logger.error("Кнопка 'Авторизоваться' заблокирована. Пытаемся разблокировать через JS...")
+            try:
+                driver.execute_script("arguments[0].removeAttribute('disabled');", submit_button)
+                time.sleep(1)
+                is_disabled_after = submit_button.get_attribute("disabled")
+                logger.info(f"Состояние кнопки после разблокировки: disabled={is_disabled_after}")
+            except Exception as e:
+                logger.error(f"Не удалось разблокировать кнопку: {e}")
+                return
+
+        # 8. Клик по кнопке (с повторами)
+        if click_with_retries(submit_button, driver):
+            logger.info("Авторизация инициирована (клик).")
+        else:
+            # Если клики не сработали — пробуем Enter
+            logger.warning("Клик не сработал. Пробуем отправить Enter на кнопку.")
+            submit_button.send_keys(Keys.ENTER)
+            logger.info("Отправлен Enter на кнопку «Авторизоваться».")
+
+        # 9. Ждём полной загрузки страницы после авторизации
+        logger.info("Ожидание загрузки страницы после авторизации...")
+        wait_for_page_load(driver, timeout=30)
+
+        # 10. Собираем JS‑ошибки после действия
+        get_browser_logs(driver)
+
+        # 11. Сохранение финальной страницы
+        save_page_html(driver, 'main_company.html', 'work_parsed_pages')
+
+        
+        # 12. Комплексная проверка авторизации
+        if check_authorization_status(driver):
+            logger.info("✅ Авторизация успешна: все проверки пройдены")
+        
+        try:
+            claims_actual_info = []
+            if not isinstance(claim_id, list):
+                        
+                print(f"Пытаемся получить json данные по заявке c ID={claim_id}")
+
+                try:
+                    # Открываем страницу
+                    driver.get(f"https://eds.mosreg.ru/api/claim/{claim_id}")
+
+                    # Ждём появления элемента <pre> с JSON (максимум 10 секунд)
+                    wait = WebDriverWait(driver, 10)
+                    json_element = wait.until(
+                        EC.presence_of_element_located((By.TAG_NAME, "pre"))
+                    )
+                    raw_json = json_element.text
+
+                    if not raw_json.strip():
+                        print(f"Получен пустой JSON для заявки {claim_id}")
+                        
+                    # Парсим JSON
+                    data = json.loads(raw_json)
+                    print(f"JSON успешно получен: {type(data)}")
+
+                    # Отладочная печать структуры
+                    print("Структура данных (первые уровни):")
+                    print(json.dumps({k: data[k] for k in list(data.keys())[:3]}, indent=2, ensure_ascii=False))
+
+
+                    # Безопасное извлечение данных с учётом реальной структуры
+                    value_data = data.get("value", {})
+                    claim_data = value_data.get("claim", {})
+
+                    claim_id_val = claim_data.get("id", None)
+                    status_name = claim_data.get("statusName", None)
+                    deadline = claim_data.get("deadline", None)
+                    type_data = claim_data.get("type", {})
+                    description = type_data.get("description", None) if type_data else None
+
+                    claims_actual_info.append((claim_id_val, status_name, deadline, description))
+                    print(f"claims_actual_info={claims_actual_info}")
+
+                except NoSuchElementException:
+                    print(f"Элемент <pre> не найден для заявки {claim_id}. Возможно, JSON не отображается или страница не загрузилась.")
+                except TimeoutException:
+                    print(f"Таймаут ожидания JSON для заявки {claim_id} (10 секунд).")
+                except json.JSONDecodeError as e:
+                    print(f"Ошибка парсинга JSON для заявки {claim_id}: {e}")
+                    print(f"Текст ответа (первые 500 символов): {raw_json[:500] if 'raw_json' in locals() else 'Недоступен'}")
+                except Exception as e:
+                    print(f"Неожиданная ошибка для заявки {claim_id}: {e}")
+            else:
+                
+                for item in claim_id:
+                    print(f"Пытаемся получить json данные по заявке c ID={item}")
+
+                    try:
+                        # Открываем страницу
+                        driver.get(f"https://eds.mosreg.ru/api/claim/{item}")
+
+                        # Ждём появления элемента <pre> с JSON (максимум 10 секунд)
+                        wait = WebDriverWait(driver, 10)
+                        json_element = wait.until(
+                            EC.presence_of_element_located((By.TAG_NAME, "pre"))
+                        )
+                        raw_json = json_element.text
+
+                        if not raw_json.strip():
+                            print(f"Получен пустой JSON для заявки {item}")
+                            continue
+
+                        # Парсим JSON
+                        data = json.loads(raw_json)
+                        print(f"JSON успешно получен: {type(data)}")
+
+                        # Отладочная печать структуры
+                        print("Структура данных (первые уровни):")
+                        print(json.dumps({k: data[k] for k in list(data.keys())[:3]}, indent=2, ensure_ascii=False))
+
+
+                        # Безопасное извлечение данных с учётом реальной структуры
+                        value_data = data.get("value", {})
+                        claim_data = value_data.get("claim", {})
+
+                        claim_id_val = claim_data.get("id", None)
+                        status_name = claim_data.get("statusName", None)
+                        deadline = claim_data.get("deadline", None)
+                        type_data = claim_data.get("type", {})
+                        description = type_data.get("description", None) if type_data else None
+
+                        claims_actual_info.append((claim_id_val, status_name, deadline, description))
+                        print(f"claims_actual_info={claims_actual_info}")
+
+                    except NoSuchElementException:
+                        print(f"Элемент <pre> не найден для заявки {item}. Возможно, JSON не отображается или страница не загрузилась.")
+                    except TimeoutException:
+                        print(f"Таймаут ожидания JSON для заявки {item} (10 секунд).")
+                    except json.JSONDecodeError as e:
+                        print(f"Ошибка парсинга JSON для заявки {item}: {e}")
+                        print(f"Текст ответа (первые 500 символов): {raw_json[:500] if 'raw_json' in locals() else 'Недоступен'}")
+                    except Exception as e:
+                        print(f"Неожиданная ошибка для заявки {item}: {e}")
+
+                print("Обработка завершена. Итоговый список:")
+                print(claims_actual_info)
+            
+
+        except requests.exceptions.RequestException as e:
+            print(f"Ошибка запроса: {e}")
+        except json.JSONDecodeError as e:
+            print(f"Ответ не является валидным JSON: {e}")
+    except Exception as e:
+        logger.error(f"Произошла ошибка: {e}")
+    finally:
+        if driver:
+            scroll_and_click_header_then_logout(driver)
+            driver.quit()
+            logger.info("Драйвер закрыт")
+    
+
+
+
+
+
+
 def search_and_extract_data(company_name:str, search_text="6213774", timeout=10):
     """
     Выполняет поиск по странице: вводит текст в поле, нажимает кнопку поиска, извлекает данные.
@@ -1299,7 +1536,7 @@ def search_and_extract_data(company_name:str, search_text="6213774", timeout=10)
     driver = None
     try:
         driver = create_driver()
-        wait = WebDriverWait(driver, 60)
+        wait = WebDriverWait(driver, 30)
 
         # 1. Загрузка страницы
         driver.get("https://eds.mosreg.ru/")
@@ -1574,7 +1811,7 @@ async def find_info_of_new_claims():
     for value in list(company_access.values()):
         print(f"Получаем информацию по новым заявкам для управляющей компании {value[0]}")
         current_new_claims = find_info_of_new_claims_by_company(value[0])
-        await add_new_claim(current_new_claims)
+        await add_new_claims(current_new_claims)
         
         new_claims_by_company.update({f"{value[0]}" : current_new_claims})
     
@@ -1592,7 +1829,7 @@ def find_info_of_new_claims_by_company(company_name:str):
     driver = None
     try:
         driver = create_driver()
-        wait = WebDriverWait(driver, 60)
+        wait = WebDriverWait(driver, 30)
 
         # 1. Загрузка страницы
         driver.get("https://eds.mosreg.ru/")
@@ -1782,6 +2019,7 @@ def find_info_of_new_claims_by_company(company_name:str):
         if driver:
             #logger.info("Браузер остаётся открытым. Нажмите Enter в консоли для закрытия...")
             #input("Чтобы остановить скрипт, нажмите Enter")  # Ожидание ввода от пользователя
+            scroll_and_click_header_then_logout(driver)
             driver.quit()
             logger.info("Драйвер закрыт")
 
@@ -1793,7 +2031,10 @@ if __name__ == "__main__":
     #asyncio.run(filled_base_of_all_companyes())
     #search_and_extract_data("Радуга", "6185598")
     #search_and_extract_data("Радуга", ["6185598", "6184252", "6180019"])
-    asyncio.run(find_info_of_new_claims())
+    #asyncio.run(find_info_of_new_claims())
+    #get_jsond_data_by_claim("Радуга", "6185598")
+    get_jsond_data_by_claim("Радуга", ["6185598", "6184252", "6180019"])
+
     
     
     

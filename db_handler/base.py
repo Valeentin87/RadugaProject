@@ -82,6 +82,8 @@ async def add_new_claim(session, claim_info:dict) -> Claim:
 @connection
 async def add_new_claims(session, new_claims_by_company: dict, batch_size: int = 100):
     """Добавляет информацию о новых заявках, принятых в работу (пакетная обработка)"""
+    if not new_claims_by_company:
+        return None
     items = list(new_claims_by_company.items())
     total_processed = 0
 
@@ -98,6 +100,7 @@ async def add_new_claims(session, new_claims_by_company: dict, batch_size: int =
 
                     if existing_claim:
                         await session.delete(existing_claim)
+                        await session.flush()  # Явный flush после удаления
                         logger.info(f"Удалена существующая запись в таблице __claims__ с {claim_id=}")
 
                     # Создание новой заявки
