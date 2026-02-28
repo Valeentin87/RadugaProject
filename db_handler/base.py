@@ -1,4 +1,5 @@
 import os, sys
+from typing import List
 
 
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -120,3 +121,22 @@ async def add_new_claims(session, new_claims_by_company: dict, batch_size: int =
     print(f"Успешно обработано {total_processed} заявок")
 
 
+
+@connection
+async def get_all_not_closed_claims(session):
+    """Возвращает список не завершенных работой заявок"""
+    try:
+        async with async_session() as session:
+            not_closed_claims:List[Claim] = (await session.execute(select(Claim).where(Claim.status.notin_(["Решено", "Закрыто"])))).scalars().all()
+            print(f"Получено {len(not_closed_claims)} заявок")
+            return not_closed_claims
+    except SQLAlchemyError as e:
+        logger.error(f"Произошла ошибка при получении информации о незакрытых заявках: {e}")
+        print(f"Произошла ошибка при получении информации о незакрытых заявках: {e}")
+
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(get_all_not_closed_claims())

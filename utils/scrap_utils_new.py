@@ -1,6 +1,3 @@
-from copy import deepcopy
-import json
-import random
 import os, sys
 
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -20,8 +17,10 @@ from selenium.webdriver.common.keys import Keys
 from selenium.common import NoSuchElementException, StaleElementReferenceException
 from bs4 import BeautifulSoup
 import logging
-import os
 import time
+from copy import deepcopy
+import json
+import random
 from create_bot import logger
 from db_handler.base import add_new_claim, add_new_claims
 
@@ -1279,7 +1278,7 @@ async def filled_base_of_all_companyes():
 
 
 
-def get_jsond_data_by_claim(company_name:str, claim_id:str | list):
+def get_jsond_data_by_claim(company_name:str, claim_id:str | list) -> list:
     """Возвращает json данные по заявке"""
     login, password = [ (value[1], value[2]) for key, value in company_access.items() if value[0].lower() == company_name.lower()][0]
 
@@ -1492,8 +1491,9 @@ def get_jsond_data_by_claim(company_name:str, claim_id:str | list):
                     except Exception as e:
                         print(f"Неожиданная ошибка для заявки {item}: {e}")
 
-                print("Обработка завершена. Итоговый список:")
-                print(claims_actual_info)
+                print("Обработка завершена. Итоговый список: (временно закоментирован)")
+                #print(claims_actual_info)
+                return claims_actual_info
             
 
         except requests.exceptions.RequestException as e:
