@@ -1414,7 +1414,7 @@ def get_jsond_data_by_claim(company_name:str, claim_id:str | list) -> list:
 
                     # Отладочная печать структуры
                     print("Структура данных (первые уровни):")
-                    print(json.dumps({k: data[k] for k in list(data.keys())[:3]}, indent=2, ensure_ascii=False))
+                    #print(json.dumps({k: data[k] for k in list(data.keys())[:3]}, indent=2, ensure_ascii=False))
 
 
                     # Безопасное извлечение данных с учётом реальной структуры
@@ -1428,7 +1428,8 @@ def get_jsond_data_by_claim(company_name:str, claim_id:str | list) -> list:
                     description = type_data.get("description", None) if type_data else None
 
                     claims_actual_info.append((claim_id_val, status_name, deadline, description))
-                    print(f"claims_actual_info={claims_actual_info}")
+                    #print(f"claims_actual_info={claims_actual_info}")
+                    time.sleep(0.2)
 
                 except NoSuchElementException:
                     print(f"Элемент <pre> не найден для заявки {claim_id}. Возможно, JSON не отображается или страница не загрузилась.")
@@ -1479,7 +1480,7 @@ def get_jsond_data_by_claim(company_name:str, claim_id:str | list) -> list:
                         description = type_data.get("description", None) if type_data else None
 
                         claims_actual_info.append((claim_id_val, status_name, deadline, description))
-                        print(f"claims_actual_info={claims_actual_info}")
+                        #print(f"claims_actual_info={claims_actual_info}")
 
                     except NoSuchElementException:
                         print(f"Элемент <pre> не найден для заявки {item}. Возможно, JSON не отображается или страница не загрузилась.")
@@ -1491,6 +1492,7 @@ def get_jsond_data_by_claim(company_name:str, claim_id:str | list) -> list:
                     except Exception as e:
                         print(f"Неожиданная ошибка для заявки {item}: {e}")
 
+                
                 print("Обработка завершена. Итоговый список: (временно закоментирован)")
                 #print(claims_actual_info)
                 return claims_actual_info
@@ -1504,6 +1506,8 @@ def get_jsond_data_by_claim(company_name:str, claim_id:str | list) -> list:
         logger.error(f"Произошла ошибка: {e}")
     finally:
         if driver:
+            driver.get("https://eds.mosreg.ru/")
+            time.sleep(3)
             scroll_and_click_header_then_logout(driver)
             driver.quit()
             logger.info("Драйвер закрыт")
