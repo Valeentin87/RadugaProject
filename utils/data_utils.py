@@ -3,7 +3,7 @@ import os, sys
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
 
-from db_handler.base import get_all_not_closed_claims
+from db_handler.base import get_all_not_closed_claims, get_deadline_exceeded_claims
 from create_bot import logger
 import json
 from typing import List
@@ -11,6 +11,10 @@ from db_handler.models import Claim
 from pprint import pprint
 from utils.scrap_utils_new import get_jsond_data_by_claim
 import time
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 COMPANY_ACCESS = os.getenv('COMPANY_ACCESS')
 company_access = json.loads(COMPANY_ACCESS)
@@ -124,9 +128,37 @@ def compare_statuses(dict1, dict2):
     return result
             
 
+async def get_details_of_exceeded_claims():
+    """Подготавливает информацию в виде словаря о заявках с истекшим сроком выполнения"""
+    try:
+        deadline_exceeded_claims: List[Claim] = await get_deadline_exceeded_claims()
+        detail_info = dict()
+        all_company = [ value[0] for value in list(company_access.values()) ]
+        [detail_info.setdefault(company, []) for company in all_company]
+
+        for claim in deadline_exceeded_claims:
+            try:
+                if claim.company_name in detail_info:
+                    #print("Совпадение по ключу")
+                    detail_info[f'{claim.company_name}'].append((claim.claim_id, claim.due_date))
+                else:
+                    raise("Эта компания не в списке оказывающих услуги")
+            except Exception:
+                logger.error(f"Произошла ошибка")
+                continue
+        pprint(detail_info)
+        print("get_details_of_exceeded_claims: Завершение работы")
+        return detail_info
+    except Exception as e:
+        logger.error(f"Произошла ошибка {e}")
+
+
+
+
 
 if __name__ == "__main__":
     import asyncio
 
     #asyncio.run(get_chanded_info())
-    asyncio.run(get_info_from_site_to_compare())
+    #asyncio.run(get_info_from_site_to_compare())
+    asyncio.run(get_details_of_exceeded_claims())

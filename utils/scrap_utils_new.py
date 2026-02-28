@@ -23,6 +23,10 @@ import json
 import random
 from create_bot import logger
 from db_handler.base import add_new_claim, add_new_claims
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 # # Настройка логирования
 # logging.basicConfig(
@@ -1806,7 +1810,7 @@ def _find_element_with_retry(wait, by, locator, max_attempts=3):
     return None
 
 
-async def find_info_of_new_claims():
+async def find_info_of_new_claims() -> dict:
     """Собирает информацию о новых заявках по всем управляющим
     компаниям и принимает их В РАБОТУ"""
     

@@ -135,8 +135,23 @@ async def get_all_not_closed_claims(session):
         print(f"Произошла ошибка при получении информации о незакрытых заявках: {e}")
 
 
+@connection
+async def get_deadline_exceeded_claims(session) -> List[Claim]:
+    """Возвращает заявки с превышенным сроком исполнения"""
+    try:
+        deadline_exceeded_claims = (await session.execute(select(Claim).where(Claim.status == "Срок превышен"))).scalars().all()
+        print(f"Получено {len(deadline_exceeded_claims)} заявок с истекшим сроком выполнения" if deadline_exceeded_claims else 'Заявки с превышенным сроком выполнения отсутствуют')
+        return deadline_exceeded_claims
+    except SQLAlchemyError as e:
+        logger.error(f"Произошла ошибка при получении информации о заявках c превышенным сроком выполнения: {e}")
+        print(f"Произошла ошибка при получении информации о заявках c превышенным сроком выполнения: {e}")
+    
+
+
 
 if __name__ == "__main__":
     import asyncio
 
-    asyncio.run(get_all_not_closed_claims())
+    #asyncio.run(get_all_not_closed_claims())
+
+    asyncio.run(get_deadline_exceeded_claims())

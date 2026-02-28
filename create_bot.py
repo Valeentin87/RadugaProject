@@ -5,7 +5,10 @@ from aiogram.client.default import DefaultBotProperties # Импортируем
 from aiogram.enums import ParseMode #
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from dotenv import load_dotenv
 
+
+load_dotenv()
 
 scheduler = AsyncIOScheduler(timezone='Europe/Moscow') # Создаем объект AsyncIOScheduler для планирования и выполнения задач по времени. Устанавливаем часовой пояс на Europe/Moscow.
 admins = [int(admin_id) for admin_id in os.getenv('ADMIN_ID').split()]
