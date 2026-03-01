@@ -1827,9 +1827,12 @@ def _find_element_with_retry(wait, by, locator, max_attempts=3):
     return None
 
 
+
 async def find_info_of_new_claims() -> dict:
     """Собирает информацию о новых заявках по всем управляющим
     компаниям и принимает их В РАБОТУ"""
+
+    
     
     new_claims_by_company = dict()
 

@@ -5,6 +5,7 @@ sys.path.append(project_directory)
 
 import re
 from bs4 import BeautifulSoup
+import importlib
 
 from db_handler.base import get_all_not_closed_claims, get_deadline_exceeded_claims
 from create_bot import logger
@@ -12,7 +13,7 @@ import json
 from typing import List
 from db_handler.models import Claim
 from pprint import pprint
-from utils.scrap_utils_new import get_jsond_data_by_claim
+#from utils.scrap_utils_new import get_jsond_data_by_claim
 import time
 from dotenv import load_dotenv
 
@@ -63,10 +64,11 @@ async def get_info_from_site_to_compare():
         start_time = time.time()
         not_closed_dict = await get_chanded_info()
         claim_info_from_site = {key : [] for key in list(not_closed_dict.keys())}
+        scrap_utils = importlib.import_module('utils.scrap_utils_new')
         for company, info in not_closed_dict.items():
             all_claim_ids = list(map(lambda x: x[0], info))
             print(f'{company=}\n{all_claim_ids[-10:]}')
-            claims_by_company = get_jsond_data_by_claim(company, all_claim_ids)
+            claims_by_company = scrap_utils.get_jsond_data_by_claim(company, all_claim_ids)
             print(f"{company=}\n{claims_by_company=}")
             claim_info_from_site.update({company : claims_by_company})
         
