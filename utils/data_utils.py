@@ -3,6 +3,9 @@ import os, sys
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
 
+import re
+from bs4 import BeautifulSoup
+
 from db_handler.base import get_all_not_closed_claims, get_deadline_exceeded_claims
 from create_bot import logger
 import json
@@ -154,6 +157,171 @@ async def get_details_of_exceeded_claims():
 
 
 
+def find_company_in_html(html_content: str, company_names: list[str]) -> str | None:
+    """
+    Ищет название управляющей компании в HTML‑контенте с учётом условий.
+
+    Args:
+        html_content (str): HTML‑контент страницы.
+        company_names (list[str]): список названий управляющих компаний для поиска.
+
+    Returns:
+        str | None: найденное название компании или None, если не найдено.
+    """
+    # Парсим HTML
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Находим блок с классом "claim-view__body"
+    claim_body = soup.find('div', class_='claim-view__body')
+    if not claim_body:
+        return None
+
+    # Получаем текст из блока (сохраняем структуру для анализа позиций)
+    body_text = str(claim_body)
+
+    # Приводим к нижнему регистру для регистронезависимого поиска
+    body_text_lower = body_text.lower()
+
+    # Ищем все совпадения названий компаний в блоке
+    matches = []
+    for company in company_names:
+        company_lower = company.lower()
+        # Используем регулярное выражение для поиска точного совпадения слова
+        pattern = r'\b' + re.escape(company_lower) + r'\b'
+        for match in re.finditer(pattern, body_text_lower):
+            matches.append({
+                'company': company,
+                'start': match.start(),
+                'end': match.end()
+            })
+
+    # Фильтруем совпадения: проверяем условие с «Кому» в пределах 80 символов слева
+    valid_matches = []
+    for match in matches:
+        start_pos = match['start']
+        # Берём фрагмент текста в пределах 80 символов слева от совпадения
+        left_context_start = max(0, start_pos - 80)
+        context = body_text_lower[left_context_start:start_pos]
+        # Проверяем, есть ли слово «Кому» (в любом регистре) в контексте
+        if re.search(r'\bкому\b', context, re.IGNORECASE):
+            valid_matches.append(match)
+
+    # Если есть валидные совпадения, возвращаем первое найденное название компании
+    if valid_matches:
+        return valid_matches[0]['company']
+
+    return None
+
+# тестовый вариант функции поиска названия управляющей компании среди HTML контента
+
+
+def find_company_in_html_from_file(filename: str, company_names: list[str]) -> str | None:
+    """
+    Ищет название управляющей компании в HTML‑файле с учётом условий.
+
+    Args:
+        filename (str): путь к файлу с HTML‑контентом.
+        company_names (list[str]): список названий управляющих компаний для поиска.
+
+    Returns:
+        str | None: найденное название компании или None, если не найдено.
+    """
+    try:
+        # Читаем содержимое файла
+        with open(filename, 'r', encoding='utf-8') as file:
+            html_content = file.read()
+    except FileNotFoundError:
+        print(f"Ошибка: файл '{filename}' не найден.")
+        return None
+    except PermissionError:
+        print(f"Ошибка: нет прав доступа к файлу '{filename}'.")
+        return None
+    except UnicodeDecodeError:
+        print(f"Ошибка: не удалось декодировать файл '{filename}'. Проверьте кодировку.")
+        return None
+    except Exception as e:
+        print(f"Неожиданная ошибка при чтении файла '{filename}': {e}")
+        return None
+
+    # Парсим HTML
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Находим блок с классом "claim-view__body"
+    claim_body = soup.find('div', class_='claim-view__body')
+    if not claim_body:
+        return None
+
+    # Получаем текст из блока
+    body_text = str(claim_body)
+    body_text_lower = body_text.lower()
+
+    # Ищем все совпадения названий компаний в блоке
+    matches = []
+    for company in company_names:
+        company_lower = company.lower()
+        pattern = r'\b' + re.escape(company_lower) + r'\b'
+        for match in re.finditer(pattern, body_text_lower):
+            matches.append({
+                'company': company,
+                'start': match.start(),
+                'end': match.end()
+            })
+
+    # Фильтруем совпадения: проверяем условие с «Кому» в пределах 80 символов слева
+    valid_matches = []
+    for match in matches:
+        start_pos = match['start']
+        left_context_start = max(0, start_pos - 80)
+        context = body_text_lower[left_context_start:start_pos]
+        # Используем флаг re.IGNORECASE для регистронезависимого поиска
+        if re.search(r'\bкому\b', context, re.IGNORECASE):
+            valid_matches.append(match)
+
+    # Если есть валидные совпадения, возвращаем первое найденное название компании
+    if valid_matches:
+        return valid_matches[0]['company']
+
+    return None
+
+
+def update_claims_with_company_names(all_claim_info: list[dict], new_claims_data: dict) -> dict:
+    """
+    Обновляет словарь new_claims_data, добавляя/обновляя поле "company_name" для каждой заявки
+    на основе данных из all_claim_info.
+
+    Args:
+        all_claim_info (list[dict]): список словарей с информацией о заявках, содержащих ключи:
+            - "url" (str)
+            - "claim_id" (str) — ID заявки
+            - "company_name" (str) — название компании
+            - "title" (str)
+            - "html_file" (str)
+            - "timestamp" (int)
+        new_claims_data (dict): словарь заявок, где ключи — ID заявок (str), значения — словари с полями:
+            - "appeal_date" (str)
+            - "description" (str)
+            - "address" (str)
+            - "urgency" (str)
+            - "due_date" (str)
+
+    Returns:
+        dict: обновлённый словарь new_claims_data с добавленным/обновлённым полем "company_name"
+    """
+    # Проходим по каждому элементу списка all_claim_info
+    for claim_info in all_claim_info:
+        claim_id = claim_info["claim_id"]
+        company_name = claim_info["company_name"]
+
+        # Если заявка с таким ID есть в new_claims_data, добавляем/обновляем поле company_name
+        if claim_id in new_claims_data:
+            new_claims_data[claim_id]["company_name"] = company_name
+
+    print("Завершение работы метода update_claims_with_company_names")
+    pprint(new_claims_data)
+    
+    return new_claims_data
+
+
 
 
 if __name__ == "__main__":
@@ -161,4 +329,7 @@ if __name__ == "__main__":
 
     #asyncio.run(get_chanded_info())
     #asyncio.run(get_info_from_site_to_compare())
-    asyncio.run(get_details_of_exceeded_claims())
+    #asyncio.run(get_details_of_exceeded_claims())
+
+    company_name = find_company_in_html_from_file("work_parsed_pages/claim_approve_6182669.html",  ["Дивное", "Радуга", "Радэкс"])
+    print(company_name)

@@ -1,5 +1,7 @@
 import os, sys
 
+from utils.data_utils import find_company_in_html, update_claims_with_company_names
+
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
 
@@ -516,13 +518,18 @@ def wait_for_page_load(driver, timeout=30):
 # ------- логика поиска кликабельных элементов для нажатия на НОВАЯ ЗАЯВКА и получения более подробной информации по ней с целью последующего принятия в работу -------
 
 
-def click_all_claim_details_and_save(driver, wait_timeout=10):
+def click_all_claim_details_and_save(driver, new_claims_data:dict, wait_timeout=10):
     """
         Ищет элементы с классом 'claim-status', находит кликабельные элементы рядом с ними,
         кликает на каждый и сохраняет информацию о страницах с деталями заявок.
     """
+    
+    print(f"click_all_claim_details_and_save: Стартовал\n{new_claims_data}")
+    
     wait = WebDriverWait(driver, wait_timeout)
     all_claims_info = []
+    all_claims_approve_info = []
+
     try:
         # Ждём появления элементов с классом claim-status
         status_elements = wait.until(
@@ -609,7 +616,9 @@ def click_all_claim_details_and_save(driver, wait_timeout=10):
                         print("Получилось нажать кнопку ПРИНЯТЬ В РАБОТУ, сохраняем контент страницы")
                         if click_result:
                             time.sleep(2.5)
-                            save_claim_details(driver, approve_flag=True)
+                            current_approve_detail = save_claim_details(driver, approve_flag=True)
+                            all_claims_approve_info.append(current_approve_detail)
+                            
                         # Закрываем окно
                         close_popup_if_exists(driver)
                         break
@@ -624,10 +633,10 @@ def click_all_claim_details_and_save(driver, wait_timeout=10):
             if not clicked:
                 print(f"Не удалось обработать элемент #{i + 1} — переходим к следующему")
         print(f"\n--- Завершено: обработано {len(all_claims_info)} заявок из {len(status_elements)} ---")
-        return all_claims_info
+        return all_claims_approve_info
     except Exception as e:
         print(f"Критическая ошибка при обработке элементов claim-status: {e}")
-        return all_claims_info
+        return all_claims_approve_info
 
 
 def get_info_of_table_with_claims(driver, wait_timeout=10):
@@ -723,7 +732,7 @@ def parse_claim_from_html(html_string):
 
 
 
-def save_claim_details(driver, claim_id="unknown", approve_flag=False):
+def save_claim_details(driver, claim_id="unknown", approve_flag=False) -> dict:
     """
         Сохраняет информацию о детализированной странице заявки.
         Добавляет ID заявки в имя файла для уникальности.
@@ -753,12 +762,20 @@ def save_claim_details(driver, claim_id="unknown", approve_flag=False):
             title = title_element.text.strip()
         except Exception:
             title = "Заголовок не найден"
+        
+        # пытаемся найти название управляющей компании, для которой предназначена заявка
+        
+        company_name = find_company_in_html(page_source, ["Дивное", "Радуга", "Радэкс"])
+
         claim_info = {
             "url": page_url,
+            "claim_id": claim_id,
+            "company_name": company_name,
             "title": title,
             "html_file": filename,
             "timestamp": int(time.time())
         }
+        print(f"Информация о заявке {claim_id} после принятия В РАБОТУ сохранена")
         return claim_info
     except Exception as e:
         print(f"Ошибка при сохранении деталей заявки: {e}")
@@ -1830,7 +1847,7 @@ async def find_info_of_new_claims() -> dict:
 
 
 
-def find_info_of_new_claims_by_company(company_name:str):
+def find_info_of_new_claims_by_company(company_name:str) -> dict | None:
     
     login, password = [ (value[1], value[2]) for key, value in company_access.items() if value[0].lower() == company_name.lower()][0]
     
@@ -1962,9 +1979,13 @@ def find_info_of_new_claims_by_company(company_name:str):
             try:
                 all_claim_info = click_all_claim_details_and_save(driver)
                 if all_claim_info:
-                    print("Информация о всех новых заявках:", all_claim_info)
+                    print("Информация о всех новых заявках c номерами и названиями заявок:", all_claim_info)
+
                     logger.info(f"Информация о всех новых заявках: {all_claim_info=}")
-                    return new_claims_data
+
+                    print("Обновляем ифнформацию в new_claims_data, добавляем названия компаний")
+                    result_new_claims_data = update_claims_with_company_names(all_claim_info, new_claims_data)
+                    return result_new_claims_data
                 else:
                     print("Не удалось получить информацию о заявках")
                     logger.warning("Не удалось получить информацию о новых заявках. Возможно их нет")

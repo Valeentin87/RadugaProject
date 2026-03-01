@@ -28,7 +28,7 @@ class Claim(Base):
     address: Mapped[str] = mapped_column(String, nullable=False) # адрес зявителя
     urgency: Mapped[str] = mapped_column(String, nullable=True)  # срочность
     due_date: Mapped[str] = mapped_column(String, nullable=False) # срок исполнения
-    status: Mapped[str] = mapped_column(String, default="Новая заявка") # статус заявки
+    status: Mapped[str] = mapped_column(String, default="В работе") # статус заявки
     additional_field: Mapped[str] = mapped_column(String, nullable=True) # дополнительная информация о заявке
 
     def to_dict(self):
