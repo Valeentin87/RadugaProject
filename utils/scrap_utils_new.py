@@ -26,6 +26,7 @@ import random
 from create_bot import logger
 from db_handler.base import add_new_claim, add_new_claims
 from dotenv import load_dotenv
+from redis_db import redis_db
 
 
 load_dotenv()
@@ -1832,7 +1833,15 @@ async def find_info_of_new_claims() -> dict:
     """Собирает информацию о новых заявках по всем управляющим
     компаниям и принимает их В РАБОТУ"""
 
+    while True:
+        check_statuses_flag = False
+        check_statuses_flag = redis_db.is_process_running("check_statuses")
+        if not check_statuses_flag:
+            break
+        print("Ждем 5 секунд и проверяем завершение процесса актуализации статусов")
+        time.sleep(5) 
     
+    redis_db.add_new_process("check_new_claims")
     
     new_claims_by_company = dict()
 
@@ -1845,6 +1854,7 @@ async def find_info_of_new_claims() -> dict:
     
     print(f'find_info_of_new_claims: {new_claims_by_company=}')
     logger.info(f"{new_claims_by_company=}")
+    redis_db.remove_process("check_new_claims")
     return new_claims_by_company
         
 
@@ -2053,6 +2063,7 @@ def find_info_of_new_claims_by_company(company_name:str) -> dict | None:
             #input("Чтобы остановить скрипт, нажмите Enter")  # Ожидание ввода от пользователя
             scroll_and_click_header_then_logout(driver)
             driver.quit()
+            redis_db.remove_process("check_new_claims")
             logger.info("Драйвер закрыт")
 
 

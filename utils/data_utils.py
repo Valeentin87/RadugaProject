@@ -1,5 +1,7 @@
 import os, sys
 
+from sqlalchemy import Tuple
+
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
 
@@ -7,12 +9,13 @@ import re
 from bs4 import BeautifulSoup
 import importlib
 
-from db_handler.base import get_all_not_closed_claims, get_deadline_exceeded_claims
+from db_handler.base import get_all_not_closed_claims, get_deadline_exceeded_claims, update_claim_in_db
 from create_bot import logger
 import json
-from typing import List
+from typing import Dict, List
 from db_handler.models import Claim
 from pprint import pprint
+from redis_db import redis_db
 #from utils.scrap_utils_new import get_jsond_data_by_claim
 import time
 from dotenv import load_dotenv
@@ -56,9 +59,22 @@ async def get_chanded_info():
         logger.error(f"Произошла ошибка {e}")
 
 
+
 async def get_info_from_site_to_compare():
     """Получает информацию с сайта по актуальным данным по заявкам 
     с целью использования их для дальнейшего сопоставления с базой данных"""
+    
+    while True:
+        check_new_claims_flag = False
+        check_new_claims_flag = redis_db.is_process_running("check_new_claims")
+        if not check_new_claims_flag:
+            break
+        print("Ждем 5 секунд и проверяем завершение процесса поиска новых заявок")
+        time.sleep(5) 
+    
+    redis_db.add_new_process("check_statuses")
+
+    
     try:
         print("get_info_from_site_to_compare: стартовала")
         start_time = time.time()
@@ -84,12 +100,12 @@ async def get_info_from_site_to_compare():
         result = compare_statuses(not_closed_dict, claim_info_from_site)
         print(f'{f"Информация по измененным статусам: {result}":.^60}')
         
+        redis_db.remove_process("check_statuses")
         return claim_info_from_site
     except Exception as e:
         logger.error(f'Произошла ошибка: {e}')
         print(f'Произошла ошибка: {e}')
-
-
+        redis_db.remove_process("check_statuses")
 
 
 def compare_statuses(dict1, dict2):
@@ -97,19 +113,21 @@ def compare_statuses(dict1, dict2):
     Сравнивает два словаря с данными о заявках и возвращает словарь с кортежами из второго словаря,
     для которых изменился статус заявки.
 
-    
     Args:
         dict1 (dict): словарь с ключами — названиями УК, значениями — списками кортежей (номер_заявки, статус)
         dict2 (dict): словарь с ключами — названиями УК, значениями — списками кортежей
-                        (номер_заявки, статус, срок_выполнения, срочность)
-    
+                    (номер_заявки, статус, срок_выполнения, срочность)
+
+
     Returns:
         dict: словарь с теми же ключами, значениями — списками кортежей из dict2, где изменился статус
     """
     result = {}
 
-    for company in dict2.keys():
-        # Инициализируем пустой список для компании в результате
+    # Получаем полный набор всех УК из обоих словарей
+    all_companies = set(dict1.keys()) | set(dict2.keys())
+
+    for company in all_companies:
         result[company] = []
 
         # Получаем списки заявок для текущей компании
@@ -117,20 +135,39 @@ def compare_statuses(dict1, dict2):
         list2 = dict2.get(company, [])
 
         # Создаём словарь для быстрого поиска статусов по номеру заявки из первого словаря
-        status_by_claim_id = {claim_id: status for claim_id, status in list1}
+        status_by_claim_id = {}
+        for item in list1:
+            if len(item) >= 2:  # проверяем, что кортеж имеет минимум 2 элемента
+                claim_id, status = item[0], item[1]
+
+                # Приводим оба значения к строке и нормализуем (убираем пробелы, нижний регистр)
+                claim_id_str = str(claim_id).strip()
+                status_str = str(status).strip().lower()
+
+                status_by_claim_id[claim_id_str] = status_str
 
         # Проверяем каждую заявку из второго словаря
         for claim_tuple in list2:
+            if len(claim_tuple) < 4:  # проверяем структуру кортежа
+                print(f"Предупреждение: некорректный кортеж в dict2 для компании {company}: {claim_tuple}")
+                continue
+
             claim_id, new_status, deadline, urgency = claim_tuple
 
+            # Приводим оба значения к строке и нормализуем
+            claim_id_str = str(claim_id).strip()
+            new_status_str = str(new_status).strip().lower()
+
             # Получаем старый статус (если заявка была в первом словаре)
-            old_status = status_by_claim_id.get(claim_id)
+            old_status = status_by_claim_id.get(claim_id_str)
 
             # Если заявка есть в первом словаре и статус изменился — добавляем кортеж в результат
-            if old_status is not None and old_status != new_status:
+            if old_status is not None and old_status != new_status_str:
                 result[company].append(claim_tuple)
 
     return result
+
+
             
 
 async def get_details_of_exceeded_claims():
@@ -324,6 +361,46 @@ def update_claims_with_company_names(all_claim_info: list[dict], new_claims_data
     return new_claims_data
 
 
+async def process_and_update_claims(data: Dict[str, List[Tuple[int, str, str, str]]]) -> Dict[str, List[Tuple]]:
+    """
+    Обрабатывает словарь с данными о заявках и обновляет БД.
+
+    Возвращает словарь с ключами 'Закрыто' и 'Требуется доработка',
+    где каждый кортеж содержит название организации как нулевой элемент.
+
+    Args:
+        data: входной словарь с заявками по организациям
+    Returns:
+        dict: словарь с отфильтрованными заявками, включая название организации
+    """
+    result = {
+        "Закрыто": [],
+        "Требуется доработка": []
+    }
+
+    # Проходим по всем организациям и их заявкам
+    for org_name, claims in data.items():
+        for claim_id, status, due_date, urgency in claims:
+            # Обновляем запись в БД
+            await update_claim_in_db(claim_id=claim_id, 
+                                    status=status,
+                                    due_date=due_date,
+                                    urgency=urgency)
+
+            # Создаём новый кортеж с названием организации как нулевым элементом
+            extended_claim = (org_name, claim_id, status, due_date, urgency)
+
+            # Фильтруем заявки по статусам для результата
+            if status == "Закрыто":
+                result["Закрыто"].append(extended_claim)
+            elif status == "Требуется доработка":
+                result["Требуется доработка"].append(extended_claim)
+
+    return result
+
+
+
+
 
 
 if __name__ == "__main__":
@@ -333,5 +410,5 @@ if __name__ == "__main__":
     #asyncio.run(get_info_from_site_to_compare())
     #asyncio.run(get_details_of_exceeded_claims())
 
-    company_name = find_company_in_html_from_file("work_parsed_pages/claim_approve_6182669.html",  ["Дивное", "Радуга", "Радэкс"])
-    print(company_name)
+    # company_name = find_company_in_html_from_file("work_parsed_pages/claim_approve_6182669.html",  ["Дивное", "Радуга", "Радэкс"])
+    # print(company_name)

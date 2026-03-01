@@ -145,7 +145,47 @@ async def get_deadline_exceeded_claims(session) -> List[Claim]:
     except SQLAlchemyError as e:
         logger.error(f"Произошла ошибка при получении информации о заявках c превышенным сроком выполнения: {e}")
         print(f"Произошла ошибка при получении информации о заявках c превышенным сроком выполнения: {e}")
-    
+
+
+
+@connection
+async def update_claim_in_db(
+    session,
+    claim_id: int,
+    status: str,
+    due_date: str,
+    urgency: str
+):
+    """
+    Обновляет запись в таблице Claim по ID заявки.
+    """
+    try:
+        # Ищем заявку по ID
+        result = await session.execute(
+            select(Claim).where(Claim.claim_id == str(claim_id))
+        )
+        find_claim: Claim = result.scalar_one_or_none()
+
+        if find_claim is None:
+            print(f"Заявка с ID {str(claim_id)} не найдена в БД")
+            return False  # Возвращаем флаг неудачи
+
+        # Обновляем поля
+        find_claim.status = status
+        find_claim.due_date = due_date
+        find_claim.urgency = urgency
+
+        # Сохраняем изменения
+        await session.commit()
+        print(f"Заявка ID {str(claim_id)} успешно обновлена")
+        return True  # Успешное обновление
+
+    except Exception as e:
+        # Откатываем транзакцию при ошибке
+        await session.rollback()
+        print(f"Ошибка при обновлении заявки ID {str(claim_id)}: {str(e)}")
+        return False
+
 
 
 

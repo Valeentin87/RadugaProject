@@ -38,6 +38,15 @@ class RedisDB:
         except Exception as e:
             print(f"При удалении процесса произошла ошибка: {e}")
             return False
+       
+        
+    def is_process_running(self, name_process) -> bool:
+        """Проверяет, есть ли процесс в списке незавершённых."""
+        try:
+            return self.redis_client.sismember("process_not_finished", name_process)
+        except Exception as e:
+            print(f"Ошибка при проверке процесса: {e}")
+            return False
     
     
     
