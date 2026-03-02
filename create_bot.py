@@ -14,10 +14,10 @@ scheduler = AsyncIOScheduler(timezone='Europe/Moscow') # Создаем объе
 admins = [int(admin_id) for admin_id in os.getenv('ADMIN_ID').split()]
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)
 
 file_handler = logging.FileHandler('claims_control.log')
-file_handler.setLevel(logging.WARNING)
+file_handler.setLevel(logging.INFO)
 
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d (%(funcName)s) - %(message)s")
 file_handler.setFormatter(formatter)

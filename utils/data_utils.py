@@ -374,7 +374,7 @@ async def process_and_update_claims(data: Dict[str, List[Tuple[int, str, str, st
     """
     Обрабатывает словарь с данными о заявках и обновляет БД.
 
-    Возвращает словарь с ключами 'Закрыто' и 'Требуется доработка',
+    Возвращает словарь с ключами 'Закрыто', 'Требуется доработка', 'Срок превышен'
     где каждый кортеж содержит название организации как нулевой элемент.
 
     Args:
@@ -384,7 +384,8 @@ async def process_and_update_claims(data: Dict[str, List[Tuple[int, str, str, st
     """
     result = {
         "Закрыто": [],
-        "Требуется доработка": []
+        "Требуется доработка": [],
+        "Срок превышен": []
     }
 
     # Проходим по всем организациям и их заявкам
@@ -404,6 +405,8 @@ async def process_and_update_claims(data: Dict[str, List[Tuple[int, str, str, st
                 result["Закрыто"].append(extended_claim)
             elif status == "Требуется доработка":
                 result["Требуется доработка"].append(extended_claim)
+            elif status == "Срок превышен":
+                result["Срок превышен"].append(extended_claim)
 
     return result
 
