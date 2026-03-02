@@ -18,6 +18,8 @@ from aiogram.filters import Command
 import emoji
 from create_bot import bot, logger, scheduler
 from keyboards.all_keyboards import claim_keyboard, start_keyboard
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from typing import List
 
 load_dotenv()
 admin_router = Router()
@@ -34,9 +36,61 @@ async def collect_group_members(message: Message):
 GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")  # замените на реальный ID
 
 
-import asyncio
-from aiogram import Bot
-from typing import List
+
+async def create_sheduler_jobs():
+    logger.info(f'create_scheduler_jobs стартовал')
+    # Создаем задачи запуска функции обновления данных по заведениям каждые 15 минут начиная с 4 до 5.45 утра
+    scheduler.add_job(
+        check_new_claims_sheduler,
+        trigger="cron",
+        # hour="22-23",           # часы: 22 и 23
+        # minute="59,3,10,25,40",   # минуты: 55 (в 22:55), 10/25/40 (в 23:10/23:25/23:40)
+        minute="0,5,10,15,20,25,30,35,40,45,50,55",          # каждые 15 минут
+        hour="7-20",           # часы: 4 и 5 (т.е. с 04:00 до 05:59)
+        kwargs = {
+            "bot" : bot
+        }
+    )
+
+
+async def create_sheduler_jobs():
+    logger.info(f'create_scheduler_jobs стартовал')
+    # Создаем задачи запуска функции обновления данных по заведениям каждые 15 минут начиная с 4 до 5.45 утра
+    scheduler.add_job(
+        check_new_claims_sheduler,
+        trigger="cron",
+        # hour="22-23",           # часы: 22 и 23
+        # minute="59,3,10,25,40",   # минуты: 55 (в 22:55), 10/25/40 (в 23:10/23:25/23:40)
+        minute="0,5,10,15,20,25,30,35,40,45,50,55",          # каждые 15 минут
+        hour="7-20",           # часы: 4 и 5 (т.е. с 04:00 до 05:59)
+        kwargs = {
+            "bot" : bot
+        }
+    )
+
+    scheduler.add_job(
+        dedline_exceed_sheduler,
+        trigger="cron",
+        # hour="22-23",           # часы: 22 и 23
+        # minute="59,3,10,25,40",   # минуты: 55 (в 22:55), 10/25/40 (в 23:10/23:25/23:40)
+        minute="59",          # каждые 15 минут
+        hour="7-20",           # часы: 4 и 5 (т.е. с 04:00 до 05:59)
+        kwargs = {
+            "bot" : bot
+        }
+    )
+
+    scheduler.add_job(
+        change_status_sheduler,
+        trigger="cron",
+        # hour="22-23",           # часы: 22 и 23
+        # minute="59,3,10,25,40",   # минуты: 55 (в 22:55), 10/25/40 (в 23:10/23:25/23:40)
+        minute="4,14,24,34,44,54",          # каждые 15 минут
+        hour="7-20",           # часы: 4 и 5 (т.е. с 04:00 до 05:59)
+        kwargs = {
+            "bot" : bot
+        }
+    )
 
 
 async def send_long_message_to_group(
@@ -127,6 +181,27 @@ async def send_to_group(message: Message):
 
 
 
+async def send_to_group_shedule(bot: Bot):
+    # Текст сообщения для рассылки
+    text = "📢 Тестовое оповещение в группу!\n\n" \
+             "Скоро мы стартуем"
+
+    try:
+        await bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text=text,
+            parse_mode="HTML"  # для форматирования текста
+        )
+        
+    except Exception as e:
+        await bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text="❌ Ошибка отправки сообщения",
+            parse_mode="HTML"  # для форматирования текста
+        )
+
+
+
 # Функция для рассылки сообщений
 async def send_broadcast(user_ids: list, text: str):
     for user_id in user_ids:
@@ -185,6 +260,25 @@ async def check_new_claims_handler(callback: CallbackQuery):
         await callback.answer("ok")
 
 
+async def check_new_claims_sheduler(bot: Bot):
+    """Проверяет наличие новых заявок и принимает их в работу, а также
+    добавляет в базу данных о расписанию"""
+    try:
+        await bot.send_message(chat_id=GROUP_CHAT_ID, text="Приступили к поиску новых заявок. Подождите...")
+        new_claims_by_company = await find_info_of_new_claims()
+        text_message = ''
+        for company, info in new_claims_by_company.items():
+            #text_message += f"**{company.upper()}**\n"
+            for claim_id, details in info.items():
+                text_message += emoji.emojize(f":NEW_button: <b>Новая заявка</b> для УК {company} ID {claim_id}\n:check_mark_button: Статус заявки для УК {company} ID {claim_id} - <b>В работе</b>\n<b>Тип:</b>{details.get('urgency')}\n<b>Срок ответа исполнителя:</b>{details.get('due_date')}\n\n")
+        await bot.send_message(chat_id=GROUP_CHAT_ID,text=text_message)
+        await bot.send_message(chat_id=GROUP_CHAT_ID, text="Поиск новых заявок завершен!")
+    except Exception as e:
+        print(f'При получении информации о новых заявках произошла ошибка')
+        logger.error(f'При получении информации о новых заявках произошла ошибка')
+        
+
+
 @admin_router.callback_query(lambda c: c.data == "dedline_exceed")
 async def dedline_exceed_handler(callback:CallbackQuery):
     """Собирает информацию о заявках с превышенным сроком и отправляет в чат"""
@@ -213,6 +307,34 @@ async def dedline_exceed_handler(callback:CallbackQuery):
         
     await callback.message.bot.send_message(chat_id=GROUP_CHAT_ID, text=text_message)
 
+
+
+async def dedline_exceed_sheduler(bot: Bot):
+    """Собирает информацию о заявках с превышенным сроком и отправляет в чат"""
+    
+    exceeded_claims = await get_details_of_exceeded_claims()
+
+    text_message = 'Заявки с статусом “Превышен срок”\n'
+
+    count_info = [(company, len(claims_info)) for company, claims_info in exceeded_claims.items() ]
+
+    for item in count_info:
+        text_message += emoji.emojize(f":double_exclamation_mark: <b>УК {item[0]}</b> {item[1]} заявки с превышенным сроком\n")
+        for claim in exceeded_claims[item[0]]:
+            text_message += f"ID {claim[0]} / Срок ответа: {claim[1]}\n"
+        text_message += "\n\n"
+    
+    
+    message_ids = await send_long_message_to_group(
+        bot=bot,
+        chat_id=GROUP_CHAT_ID,  # ID группового чата
+        text=text_message,
+        max_length=4096,
+        delay=0.3,  # задержка 300 мс между сообщениями
+        add_part_info=True  # добавляем нумерацию частей
+    )
+        
+    await bot.send_message(chat_id=GROUP_CHAT_ID, text=text_message)
 
 
 @admin_router.callback_query(lambda c: c.data == "change_status")
@@ -251,6 +373,44 @@ async def change_status_handler(callback: CallbackQuery):
         delay=0.3,  # задержка 300 мс между сообщениями
         add_part_info=True  # добавляем нумерацию частей
     )
+        
+
+async def change_status_sheduler(bot: Bot):
+    await bot.send_message(chat_id=GROUP_CHAT_ID, text="Приступили к проверке актуальности статусов заявок")   
+    compare_result = await get_info_from_site_to_compare()
+
+    finish_result = await process_and_update_claims(compare_result)
+
+    closed_message = ''
+    exceed_message = ''
+
+    for item in finish_result['Закрыто']:
+        closed_message += emoji.emojize(f":cross_mark: <b>Заявка закрыта.</b> УК {item[0]} ID {str(item[1])}\n")
+
+    for item in finish_result['Требуется доработка']:
+        exceed_message += emoji.emojize(f':warning: Статус заявки для УК {item[0]} ID {str(item[1])} <b>“Требуется доработка”\nСрок ответа исполнителя:</b> {item[3]}\n')
+
+    if closed_message:
+        closed_message_ids = await send_long_message_to_group(
+        bot=bot,
+        chat_id=GROUP_CHAT_ID,  # ID группового чата
+        text=closed_message,
+        max_length=4096,
+        delay=0.3,  # задержка 300 мс между сообщениями
+        add_part_info=True  # добавляем нумерацию частей
+    )
+        
+    if exceed_message:
+        exceed_message_ids = await send_long_message_to_group(
+        bot=bot,
+        chat_id=GROUP_CHAT_ID,  # ID группового чата
+        text=exceed_message,
+        max_length=4096,
+        delay=0.3,  # задержка 300 мс между сообщениями
+        add_part_info=True  # добавляем нумерацию частей
+    )
+        
+    await bot.send_message(chat_id=GROUP_CHAT_ID, text="Проверка актуальности статусов заявок завершена")
         
         
      

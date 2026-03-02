@@ -1,7 +1,5 @@
 import os, sys
 
-from sqlalchemy import Tuple
-
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
 
@@ -12,7 +10,7 @@ import importlib
 from db_handler.base import get_all_not_closed_claims, get_deadline_exceeded_claims, update_claim_in_db
 from create_bot import logger
 import json
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from db_handler.models import Claim
 from pprint import pprint
 from redis_db import redis_db

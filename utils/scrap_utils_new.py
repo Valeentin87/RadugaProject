@@ -1,7 +1,5 @@
 import os, sys
 
-from utils.data_utils import find_company_in_html, update_claims_with_company_names
-
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
 
@@ -25,6 +23,7 @@ import json
 import random
 from create_bot import logger
 from db_handler.base import add_new_claim, add_new_claims
+from utils.data_utils import find_company_in_html, update_claims_with_company_names
 from dotenv import load_dotenv
 from redis_db import redis_db
 
@@ -1859,6 +1858,41 @@ async def find_info_of_new_claims() -> dict:
         
 
 
+def test_connection():
+    """Тестовое соединение для возможности взаимодействовать с браузером"""
+    driver = None
+    try:
+        driver = create_driver()
+        wait = WebDriverWait(driver, 30)
+
+        # 1. Загрузка страницы
+        driver.get("https://eds.mosreg.ru/")
+        logger.info(f"Страница загружена: {driver.current_url}")
+        save_page_html(driver, 'login_page.html', 'work_parsed_pages')
+
+        
+        scroll_and_click_login_link(driver)
+        # 2. Удаление оверлея
+        remove_overlay(driver)
+    except Exception as e:
+        logger.error(f"Непредвиденная ошибка: {type(e).__name__}: {e}")
+        if driver:
+            save_page_html(driver, 'unexpected_error_page.html', 'work_parsed_pages')
+            driver.save_screenshot('unexpected_error_screenshot.png')
+    finally:
+        if driver:
+            logger.info("Браузер остаётся открытым. Нажмите Enter в консоли для закрытия...")
+            input("Чтобы остановить скрипт, нажмите Enter")  # Ожидание ввода от пользователя
+            scroll_and_click_header_then_logout(driver)
+            driver.quit()
+            redis_db.remove_process("check_new_claims")
+            logger.info("Драйвер закрыт")
+
+    
+
+
+
+
 
 def find_info_of_new_claims_by_company(company_name:str) -> dict | None:
     
@@ -1990,7 +2024,7 @@ def find_info_of_new_claims_by_company(company_name:str) -> dict | None:
                 
             # 15. Получаем детальную информацию о всех новых заявках
             try:
-                all_claim_info = click_all_claim_details_and_save(driver)
+                all_claim_info = click_all_claim_details_and_save(driver, new_claims_data)
                 if all_claim_info:
                     print("Информация о всех новых заявках c номерами и названиями заявок:", all_claim_info)
 
@@ -2076,7 +2110,8 @@ if __name__ == "__main__":
     #search_and_extract_data("Радуга", ["6185598", "6184252", "6180019"])
     #asyncio.run(find_info_of_new_claims())
     #get_jsond_data_by_claim("Радуга", "6185598")
-    get_jsond_data_by_claim("Радуга", ["6185598", "6184252", "6180019"])
+    #get_jsond_data_by_claim("Радуга", ["6185598", "6184252", "6180019"])
+    test_connection()
 
     
     
