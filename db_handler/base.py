@@ -128,7 +128,7 @@ async def get_all_not_closed_claims(session):
     try:
         async with async_session() as session:
             #not_closed_claims:List[Claim] = (await session.execute(select(Claim).where(Claim.status.notin_(["Решено", "Закрыто", "Закрыто. Отправлено в ДД."])))).scalars().all()
-            not_closed_claims:List[Claim] = (await session.execute(select(Claim).where(Claim.status.in_(["Ожидает подтверждения", "Требуется доработка", "Срок превышен"])))).scalars().all()
+            not_closed_claims:List[Claim] = (await session.execute(select(Claim).where(Claim.status.in_(["В работе", "Ожидает подтверждения", "Требуется доработка", "Срок превышен"])))).scalars().all()
             print(f"Получено {len(not_closed_claims)} заявок")
             logger.warning(f"Получено {len(not_closed_claims)} заявок")
             return not_closed_claims
