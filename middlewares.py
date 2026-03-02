@@ -9,6 +9,9 @@ from aiogram import BaseMiddleware, Bot
 from aiogram.types import Update, Message, BotCommandScopeChat
 from aiogram.types import BotCommand
 from commands import BASIC_COMMANDS, ADMIN_COMMANDS
+import os
+from aiogram import BaseMiddleware, Bot
+
 
 
 ADMIN_IDS = set(map(int, os.getenv("ADMIN_ID").split(" ")))
