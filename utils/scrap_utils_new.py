@@ -1,5 +1,6 @@
 import os, sys
 
+
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_directory)
 
@@ -26,6 +27,7 @@ from db_handler.base import add_new_claim, add_new_claims
 from utils.data_utils import find_company_in_html, update_claims_with_company_names
 from dotenv import load_dotenv
 from redis_db import redis_db
+import tempfile
 
 
 load_dotenv()
@@ -41,12 +43,33 @@ load_dotenv()
 # )
 # logger = logging.getLogger(__name__)
 
+
+def get_unique_profile():
+    """Создаёт уникальную временную директорию для профиля браузера"""
+    profile_dir = tempfile.mkdtemp(prefix="selenium_profile_")
+    # Регистрируем очистку при завершении процесса
+    import atexit
+    atexit.register(lambda: cleanup_profile(profile_dir))
+    return profile_dir
+
+
+def cleanup_profile(profile_dir):
+    """Удаляет временную директорию профиля"""
+    try:
+        if os.path.exists(profile_dir):
+            import shutil
+            shutil.rmtree(profile_dir, ignore_errors=True)
+    except Exception as e:
+        logger.warning(f"Ошибка очистки профиля {profile_dir}: {e}")
+
+
 def create_chrome_options():
     options = webdriver.ChromeOptions()
     options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--remote-debugging-port=9222')
+    #options.add_argument('--remote-debugging-port=9222')
+    options.add_argument(f"--user-data-dir={get_unique_profile()}")
     options.add_argument('--window-size=1920,1080')
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
     options.add_argument("--accept-language=ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
@@ -1024,7 +1047,7 @@ company_access = json.loads(COMPANY_ACCESS)
 
 
 
-def scroll_and_click_login_link(driver, timeout=60):
+def scroll_and_click_login_link(driver, timeout=45):
     """
     Гарантированно скроллит страницу наверх, ищет и нажимает на элемент с классом
     header-login__link и текстом «Войти».
@@ -1086,7 +1109,7 @@ async def filled_claims_to_base(login:str, password:str, company_name:str):
     driver = None
     try:
         driver = create_driver()
-        wait = WebDriverWait(driver, 30)
+        wait = WebDriverWait(driver, 15)
 
         # 1. Загрузка страницы
         driver.get("https://eds.mosreg.ru/")
@@ -1206,7 +1229,7 @@ async def filled_claims_to_base(login:str, password:str, company_name:str):
 
 
 
-def scroll_and_click_header_then_logout(driver, timeout=30):
+def scroll_and_click_header_then_logout(driver, timeout=20):
     """
     1. Скроллит страницу наверх.
     2. Находит и нажимает на элемент header-login__link.
@@ -1309,7 +1332,7 @@ def get_jsond_data_by_claim(company_name:str, claim_id:str | list) -> list:
     driver = None
     try:
         driver = create_driver()
-        wait = WebDriverWait(driver, 30)
+        wait = WebDriverWait(driver, 20)
 
         # 1. Загрузка страницы
         driver.get("https://eds.mosreg.ru/")
@@ -1561,7 +1584,7 @@ def search_and_extract_data(company_name:str, search_text="6213774", timeout=10)
     driver = None
     try:
         driver = create_driver()
-        wait = WebDriverWait(driver, 30)
+        wait = WebDriverWait(driver, 20)
 
         # 1. Загрузка страницы
         driver.get("https://eds.mosreg.ru/")
@@ -1832,15 +1855,15 @@ async def find_info_of_new_claims() -> dict:
     """Собирает информацию о новых заявках по всем управляющим
     компаниям и принимает их В РАБОТУ"""
 
-    while True:
-        check_statuses_flag = False
-        check_statuses_flag = redis_db.is_process_running("check_statuses")
-        if not check_statuses_flag:
-            break
-        print("Ждем 5 секунд и проверяем завершение процесса актуализации статусов")
-        time.sleep(5) 
+    # while True:
+    #     check_statuses_flag = False
+    #     check_statuses_flag = redis_db.is_process_running("check_statuses")
+    #     if not check_statuses_flag:
+    #         break
+    #     print("Ждем 5 секунд и проверяем завершение процесса актуализации статусов")
+    #     time.sleep(5) 
     
-    redis_db.add_new_process("check_new_claims")
+    # redis_db.add_new_process("check_new_claims")
     
     new_claims_by_company = dict()
 
@@ -1853,7 +1876,7 @@ async def find_info_of_new_claims() -> dict:
     
     print(f'find_info_of_new_claims: {new_claims_by_company=}')
     logger.info(f"{new_claims_by_company=}")
-    redis_db.remove_process("check_new_claims")
+    #redis_db.remove_process("check_new_claims")
     return new_claims_by_company
         
 
@@ -1863,7 +1886,7 @@ def test_connection():
     driver = None
     try:
         driver = create_driver()
-        wait = WebDriverWait(driver, 30)
+        wait = WebDriverWait(driver, 20)
 
         # 1. Загрузка страницы
         driver.get("https://eds.mosreg.ru/")
@@ -1901,7 +1924,7 @@ def find_info_of_new_claims_by_company(company_name:str) -> dict | None:
     driver = None
     try:
         driver = create_driver()
-        wait = WebDriverWait(driver, 30)
+        wait = WebDriverWait(driver, 15)
 
         # 1. Загрузка страницы
         driver.get("https://eds.mosreg.ru/")
@@ -1948,7 +1971,7 @@ def find_info_of_new_claims_by_company(company_name:str) -> dict | None:
         password_field.clear()
         
         password_field.send_keys(password)
-        logger.info(f"Пароль введён: {len(password_field.get_attribute('value'))} символов")
+        logger.info(f"Пароль введён: {str(len(password_field.get_attribute('value')))} символов")
 
         # 6. Кнопка «Авторизоваться»
         submit_button = wait.until(

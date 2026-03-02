@@ -1,5 +1,5 @@
 import os, sys
-from typing import List
+from typing import Dict, List, Tuple
 
 
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -127,8 +127,9 @@ async def get_all_not_closed_claims(session):
     """Возвращает список не завершенных работой заявок"""
     try:
         async with async_session() as session:
-            not_closed_claims:List[Claim] = (await session.execute(select(Claim).where(Claim.status.notin_(["Решено", "Закрыто"])))).scalars().all()
+            not_closed_claims:List[Claim] = (await session.execute(select(Claim).where(Claim.status.notin_(["Решено", "Закрыто", "Закрыто. Отправлено в ДД."])))).scalars().all()
             print(f"Получено {len(not_closed_claims)} заявок")
+            logger.warning(f"Получено {len(not_closed_claims)} заявок")
             return not_closed_claims
     except SQLAlchemyError as e:
         logger.error(f"Произошла ошибка при получении информации о незакрытых заявках: {e}")
@@ -146,6 +147,67 @@ async def get_deadline_exceeded_claims(session) -> List[Claim]:
         logger.error(f"Произошла ошибка при получении информации о заявках c превышенным сроком выполнения: {e}")
         print(f"Произошла ошибка при получении информации о заявках c превышенным сроком выполнения: {e}")
 
+
+
+@connection
+async def get_claims_by_company_from_db(session) -> Dict[str, List[Tuple]]:
+    """
+    Возвращает словарь, где:
+    - ключи — уникальные значения поля company_name;
+    - значения — списки кортежей (claim_id, status, description, appeal_date, urgency)
+      для заявок со статусами «Закрыто» и «Требуется доработка».
+
+
+    Args:
+        session: асинхронная сессия SQLAlchemy
+
+
+    Returns:
+        Словарь с данными по компаниям и их заявкам
+    """
+    # Определяем нужные статусы
+    target_statuses = ["Закрыто", "Требуется доработка"]
+
+
+    # Формируем запрос — включаем все нужные поля
+    stmt = (
+        select(
+            Claim.company_name,
+            Claim.claim_id,
+            Claim.status,
+            Claim.description,
+            Claim.appeal_date,
+            Claim.urgency
+        )
+        .where(Claim.status.in_(target_statuses))
+        .order_by(Claim.company_name)
+    )
+
+    # Выполняем запрос
+    result = await session.execute(stmt)
+    rows = result.all()
+
+    # Группируем данные по company_name
+    claims_by_company: Dict[str, List[Tuple]] = {}
+
+    for row in rows:
+        company_name = row.company_name
+        # Формируем кортеж: claim_id — первый элемент, status — второй
+        claim_data = (
+            row.claim_id,
+            row.status,
+            row.description,
+            row.appeal_date,
+            row.urgency
+        )
+
+        if company_name not in claims_by_company:
+            claims_by_company[company_name] = []
+
+        claims_by_company[company_name].append(claim_data)
+
+    print(f"get_claims_by_company_from_db: {claims_by_company=}")
+    return claims_by_company
 
 
 @connection
@@ -194,4 +256,5 @@ if __name__ == "__main__":
 
     #asyncio.run(get_all_not_closed_claims())
 
-    asyncio.run(get_deadline_exceeded_claims())
+    #asyncio.run(get_deadline_exceeded_claims())
+    asyncio.run(get_claims_by_company_from_db())

@@ -3,7 +3,8 @@ import os, sys
 
 from dotenv import load_dotenv
 
-from utils.data_utils import get_details_of_exceeded_claims, get_info_from_site_to_compare, process_and_update_claims
+from db_handler.base import get_claims_by_company_from_db
+from utils.data_utils import get_details_of_exceeded_claims, get_info_from_site_to_compare, process_and_update_claims, transform_claims_by_status
 from utils.scrap_utils_new import find_info_of_new_claims
 
 project_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -45,23 +46,7 @@ async def create_sheduler_jobs():
         trigger="cron",
         # hour="22-23",           # часы: 22 и 23
         # minute="59,3,10,25,40",   # минуты: 55 (в 22:55), 10/25/40 (в 23:10/23:25/23:40)
-        minute="0,5,10,15,20,25,30,35,40,45,50,55",          # каждые 15 минут
-        hour="7-20",           # часы: 4 и 5 (т.е. с 04:00 до 05:59)
-        kwargs = {
-            "bot" : bot
-        }
-    )
-
-
-async def create_sheduler_jobs():
-    logger.info(f'create_scheduler_jobs стартовал')
-    # Создаем задачи запуска функции обновления данных по заведениям каждые 15 минут начиная с 4 до 5.45 утра
-    scheduler.add_job(
-        check_new_claims_sheduler,
-        trigger="cron",
-        # hour="22-23",           # часы: 22 и 23
-        # minute="59,3,10,25,40",   # минуты: 55 (в 22:55), 10/25/40 (в 23:10/23:25/23:40)
-        minute="0,5,10,15,20,25,30,35,40,45,50,55",          # каждые 15 минут
+        minute="0,10,20,30,40,50",          # каждые 15 минут
         hour="7-20",           # часы: 4 и 5 (т.е. с 04:00 до 05:59)
         kwargs = {
             "bot" : bot
@@ -72,7 +57,7 @@ async def create_sheduler_jobs():
         dedline_exceed_sheduler,
         trigger="cron",
         # hour="22-23",           # часы: 22 и 23
-        # minute="59,3,10,25,40",   # минуты: 55 (в 22:55), 10/25/40 (в 23:10/23:25/23:40)
+        # minute="5,3,10,25,40",   # минуты: 55 (в 22:55), 10/25/40 (в 23:10/23:25/23:40)
         minute="59",          # каждые 15 минут
         hour="7-20",           # часы: 4 и 5 (т.е. с 04:00 до 05:59)
         kwargs = {
@@ -85,7 +70,7 @@ async def create_sheduler_jobs():
         trigger="cron",
         # hour="22-23",           # часы: 22 и 23
         # minute="59,3,10,25,40",   # минуты: 55 (в 22:55), 10/25/40 (в 23:10/23:25/23:40)
-        minute="4,14,24,34,44,54",          # каждые 15 минут
+        minute="7,18,28,38,48,58",          # каждые 15 минут
         hour="7-20",           # часы: 4 и 5 (т.е. с 04:00 до 05:59)
         kwargs = {
             "bot" : bot
@@ -267,15 +252,16 @@ async def check_new_claims_sheduler(bot: Bot):
         await bot.send_message(chat_id=GROUP_CHAT_ID, text="Приступили к поиску новых заявок. Подождите...")
         new_claims_by_company = await find_info_of_new_claims()
         text_message = ''
-        for company, info in new_claims_by_company.items():
-            #text_message += f"**{company.upper()}**\n"
-            for claim_id, details in info.items():
-                text_message += emoji.emojize(f":NEW_button: <b>Новая заявка</b> для УК {company} ID {claim_id}\n:check_mark_button: Статус заявки для УК {company} ID {claim_id} - <b>В работе</b>\n<b>Тип:</b>{details.get('urgency')}\n<b>Срок ответа исполнителя:</b>{details.get('due_date')}\n\n")
-        await bot.send_message(chat_id=GROUP_CHAT_ID,text=text_message)
+        if new_claims_by_company:
+            for company, info in new_claims_by_company.items():
+                #text_message += f"**{company.upper()}**\n"
+                for claim_id, details in info.items():
+                    text_message += emoji.emojize(f":NEW_button: <b>Новая заявка</b> для УК {company} ID {claim_id}\n:check_mark_button: Статус заявки для УК {company} ID {claim_id} - <b>В работе</b>\n<b>Тип:</b>{details.get('urgency')}\n<b>Срок ответа исполнителя:</b>{details.get('due_date')}\n\n")
+            await bot.send_message(chat_id=GROUP_CHAT_ID,text=text_message)
         await bot.send_message(chat_id=GROUP_CHAT_ID, text="Поиск новых заявок завершен!")
     except Exception as e:
-        print(f'При получении информации о новых заявках произошла ошибка')
-        logger.error(f'При получении информации о новых заявках произошла ошибка')
+        print(f'При получении информации о новых заявках произошла ошибка {e}')
+        logger.error(f'При получении информации о новых заявках произошла ошибка {e}')
         
 
 
@@ -342,8 +328,11 @@ async def change_status_handler(callback: CallbackQuery):
     await callback.answer("ok")
     
     compare_result = await get_info_from_site_to_compare()
-
+    logger.info(f"change_status_handler: compare_result={compare_result}")
+    print(f"change_status_handler: compare_result={compare_result}")
     finish_result = await process_and_update_claims(compare_result)
+    logger.info(f"change_status_handler: finish_result={finish_result}")
+    print(f"change_status_handler: finish_result={finish_result}")
 
     closed_message = ''
     exceed_message = ''
@@ -377,9 +366,13 @@ async def change_status_handler(callback: CallbackQuery):
 
 async def change_status_sheduler(bot: Bot):
     await bot.send_message(chat_id=GROUP_CHAT_ID, text="Приступили к проверке актуальности статусов заявок")   
+    
     compare_result = await get_info_from_site_to_compare()
-
+    logger.info(f"change_status_handler: compare_result={compare_result}")
+    print(f"change_status_handler: compare_result={compare_result}")
     finish_result = await process_and_update_claims(compare_result)
+    logger.info(f"change_status_handler: finish_result={finish_result}")
+    print(f"change_status_handler: finish_result={finish_result}")
 
     closed_message = ''
     exceed_message = ''
@@ -414,6 +407,3 @@ async def change_status_sheduler(bot: Bot):
         
         
      
-
-
-

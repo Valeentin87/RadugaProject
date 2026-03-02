@@ -36,19 +36,25 @@ async def get_chanded_info():
 
         # формируем информацию по компаниям:
         not_closed_dict = dict()
+        logger.warning(f"get_chanded_info: {company_access=}")
         all_company = [ value[0] for value in list(company_access.values()) ]
+        
         print(f"{all_company=}")
-        [not_closed_dict.setdefault(company, []) for company in all_company]
+        logger.warning(f"{all_company=}")
+        for company in all_company:
+            not_closed_dict.setdefault(company, [])
+        #[not_closed_dict.setdefault(company, []) for company in all_company]
         
         for claim in not_closed_claims:
             try:
                 if claim.company_name in not_closed_dict:
                     #print("Совпадение по ключу")
-                    not_closed_dict[f'{claim.company_name}'].append((claim.claim_id, claim.status))
+                    not_closed_dict[claim.company_name].append((claim.claim_id, claim.status))
                 else:
-                    raise("Эта компания не в списке оказывающих услуги")
-            except Exception:
-                logger.error(f"Произошла ошибка")
+                    logger.warning(f"Не попавшая в список компания: {claim.company_name}")
+                    raise ValueError("Эта компания не в списке оказывающих услуги")
+            except Exception as e:
+                logger.error(f"Произошла ошибка {e}")
                 continue
         #pprint(not_closed_dict)
         print("get_chanded_info: Завершение работы")
@@ -76,6 +82,7 @@ async def get_info_from_site_to_compare():
     try:
         print("get_info_from_site_to_compare: стартовала")
         start_time = time.time()
+        not_closed_dict = dict()
         not_closed_dict = await get_chanded_info()
         claim_info_from_site = {key : [] for key in list(not_closed_dict.keys())}
         scrap_utils = importlib.import_module('utils.scrap_utils_new')
@@ -88,18 +95,22 @@ async def get_info_from_site_to_compare():
         
         print(f"{'Работа функции завершена':.^40}")
         pprint(claim_info_from_site)
+        logger.info(claim_info_from_site)
         end_time = time.time()
         execution_time = end_time - start_time
         width = 50  # Общая ширина строки
         print(f"{f'Поиск актуальной информации по заявкам выполнялся: {execution_time} секунд':^{width}}")
+        logger.info(f"{f'Поиск актуальной информации по заявкам выполнялся: {execution_time} секунд':^{width}}")
         
         print("Приступаем к сравнению данных в базе и на сайте")
+        logger.info("Приступаем к сравнению данных в базе и на сайте")
 
         result = compare_statuses(not_closed_dict, claim_info_from_site)
         print(f'{f"Информация по измененным статусам: {result}":.^60}')
+        logger.info(f'{f"Информация по измененным статусам: {result}":.^60}')
         
         redis_db.remove_process("check_statuses")
-        return claim_info_from_site
+        return result
     except Exception as e:
         logger.error(f'Произошла ошибка: {e}')
         print(f'Произошла ошибка: {e}')
@@ -397,6 +408,43 @@ async def process_and_update_claims(data: Dict[str, List[Tuple[int, str, str, st
     return result
 
 
+def transform_claims_by_status(claims_by_company: Dict[str, List[Tuple]]) -> Dict[str, List[Tuple]]:
+    """
+    Преобразует словарь вида {company_name: [(claim_id, status, description, appeal_date, urgency), ...]}
+    в словарь вида {status: [(company_name, claim_id, status, appeal_date, urgency), ...]}.
+
+    Args:
+        claims_by_company: результат работы функции get_claims_by_company
+
+    Returns:
+        Словарь, сгруппированный по статусам заявок
+    """
+    # Инициализируем словарь с пустыми списками для нужных статусов
+    result: Dict[str, List[Tuple]] = {
+        "Закрыто": [],
+        "Требуется доработка": []
+    }
+
+    # Проходим по всем компаниям и их заявкам
+    for company_name, claims in claims_by_company.items():
+        for claim_data in claims:
+            # claim_data — это кортеж: (claim_id, status, description, appeal_date, urgency)
+            claim_id, status, description, appeal_date, urgency = claim_data
+
+            # Создаём новый кортеж с company_name на первом месте
+            new_claim_data = (
+                company_name,
+                claim_id,
+                status,
+                appeal_date,
+                urgency
+            )
+
+            # Добавляем в соответствующий список по статусу
+            if status in result:
+                result[status].append(new_claim_data)
+
+    return result
 
 
 
