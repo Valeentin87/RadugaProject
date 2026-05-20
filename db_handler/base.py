@@ -64,8 +64,7 @@ async def add_new_claim(session, claim_info:dict) -> Claim:
 
         # Создаём новую заявку на основе данных словаря
         new_claim = Claim(**claim_info)
-        session.add(new_claim)
-        await session.commit()
+        
         await session.refresh(new_claim)  # Обновляем объект с актуальными данными из БД
         logger.info(f"Добавлена запись в таблице __claims__ с {claim_id=}")
         print(f"Добавлена запись в таблице __claims__ с {claim_id=}")

@@ -389,24 +389,25 @@ async def process_and_update_claims(data: Dict[str, List[Tuple[int, str, str, st
     }
 
     # Проходим по всем организациям и их заявкам
-    for org_name, claims in data.items():
-        for claim_id, status, due_date, urgency in claims:
-            # Обновляем запись в БД
-            await update_claim_in_db(claim_id=claim_id, 
-                                    status=status,
-                                    due_date=due_date,
-                                    urgency=urgency)
+    if data:
+        for org_name, claims in data.items():
+            for claim_id, status, due_date, urgency in claims:
+                # Обновляем запись в БД
+                await update_claim_in_db(claim_id=claim_id, 
+                                        status=status,
+                                        due_date=due_date,
+                                        urgency=urgency)
 
-            # Создаём новый кортеж с названием организации как нулевым элементом
-            extended_claim = (org_name, claim_id, status, due_date, urgency)
+                # Создаём новый кортеж с названием организации как нулевым элементом
+                extended_claim = (org_name, claim_id, status, due_date, urgency)
 
-            # Фильтруем заявки по статусам для результата
-            if status == "Закрыто":
-                result["Закрыто"].append(extended_claim)
-            elif status == "Требуется доработка":
-                result["Требуется доработка"].append(extended_claim)
-            elif status == "Срок превышен":
-                result["Срок превышен"].append(extended_claim)
+                # Фильтруем заявки по статусам для результата
+                if status == "Закрыто":
+                    result["Закрыто"].append(extended_claim)
+                elif status == "Требуется доработка":
+                    result["Требуется доработка"].append(extended_claim)
+                elif status == "Срок превышен":
+                    result["Срок превышен"].append(extended_claim)
 
     return result
 
