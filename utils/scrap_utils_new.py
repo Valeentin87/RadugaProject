@@ -184,6 +184,16 @@ def click_new_claims_by_icon(driver, wait):
     search_strategies = [
         {
             'type': 'xpath',
+            'locator': "//div[contains(text(), 'Новые:')]/ancestor::div[contains(@class, 'd-flex')][1]",
+            'description': 'XPath: поиск по тексту «Новые:» и родительскому контейнеру'
+        },
+        {
+            'type': 'css',
+            'locator': "div[_ngcontent-ng-c3750005855][position='top'].d-flex.cup",
+            'description': 'CSS: комбинация Angular-атрибута, атрибута position и классов'
+        },
+        {
+            'type': 'xpath',
             'locator': "//div[_ngcontent-ng-c3750005855][contains(@class, 'cup')]//img[@src='assets/images/statistic/plus.svg']/ancestor::div[1]",
             'description': 'XPath: родительский div с классом cup и Angular-атрибутом, содержащий img[src=plus.svg]'
         },
@@ -196,16 +206,6 @@ def click_new_claims_by_icon(driver, wait):
             'type': 'xpath',
             'locator': "//div[_ngcontent-ng-c3750005855 and contains(@class, 'd-flex') and contains(@class, 'align-center') and contains(@class, 'cup')]",
             'description': 'XPath: div с полным набором классов и Angular-атрибутом'
-        },
-        {
-            'type': 'css',
-            'locator': "div[_ngcontent-ng-c3750005855][position='top'].d-flex.cup",
-            'description': 'CSS: комбинация Angular-атрибута, атрибута position и классов'
-        },
-        {
-            'type': 'xpath',
-            'locator': "//div[contains(text(), 'Новые:')]/ancestor::div[contains(@class, 'd-flex')][1]",
-            'description': 'XPath: поиск по тексту «Новые:» и родительскому контейнеру'
         }
     ]
 
