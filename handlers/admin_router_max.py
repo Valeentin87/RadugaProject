@@ -50,7 +50,8 @@ async def send_long_message_to_group(
     """
     if len(text) <= max_length:
         message = await bot.send_message(text, chat_id, format='html')
-        return [message.message_id]
+        
+        return [message.id]
 
     sent_messages = []
     current_pos = 0
@@ -63,7 +64,7 @@ async def send_long_message_to_group(
             if add_part_info:
                 part = f"Часть {part_number}/{part_number}:\n{part}"
             message = await bot.send_message(part, chat_id, format='html')
-            sent_messages.append(message.message_id)
+            sent_messages.append(message.id)
             break
 
         # Ищем ближайший перенос строки в пределах лимита
@@ -76,7 +77,7 @@ async def send_long_message_to_group(
             # if add_part_info:
             #     part = f"Часть {part_number}/...:\n{part}"
             message = await bot.send_message(part, chat_id, format='html')
-            sent_messages.append(message.message_id)
+            sent_messages.append(message.id)
             current_pos = newline_pos + 1  # пропускаем символ \n
             part_number += 1
         else:
@@ -85,7 +86,7 @@ async def send_long_message_to_group(
             # if add_part_info:
             #     part = f"Часть {part_number}/...:\n{part}"
             message = await bot.send_message(part, chat_id, format='html')
-            sent_messages.append(message.message_id)
+            sent_messages.append(message.id)
             current_pos += max_length
             part_number += 1
 
@@ -99,6 +100,7 @@ async def send_long_message_to_group(
 
 async def create_sheduler_jobs():
     logger.info(f'create_scheduler_jobs стартовал')
+    print("create_scheduler_jobs стартовал")
     # Создаем задачи запуска функции обновления данных по заведениям каждые 15 минут начиная с 4 до 5.45 утра
     scheduler.add_job(
         check_new_claims_sheduler,
@@ -124,11 +126,75 @@ async def create_sheduler_jobs():
         }
     )
 
+@admin_router_max.on_button_callback(lambda data: data.payload == "change_status")
+async def change_status_handler(ctx: CommandContext):
+    try:
+    
+        await ctx.message.bot.send_message(chat_id=GROUP_CHAT_MAX_ID, text="Приступили к проверке актуальности статусов заявок", format='html')
+        
+        compare_result = await get_info_from_site_to_compare()
+        logger.info(f"change_status_handler: compare_result={compare_result}")
+        print(f"change_status_handler: compare_result={compare_result}")
+        finish_result = await process_and_update_claims(compare_result)
+        logger.info(f"change_status_handler: finish_result={finish_result}")
+        print(f"change_status_handler: finish_result={finish_result}")
+
+        closed_message = ''
+        exceed_message = ''
+        deadline_exceeded_message = ''
+
+        for item in finish_result['Закрыто']:
+            closed_message += emoji.emojize(f":cross_mark: <b>Заявка закрыта.</b> УК {item[0]} ID {str(item[1])}\n")
+
+        for item in finish_result['Требуется доработка']:
+            exceed_message += emoji.emojize(f':warning: Статус заявки для УК {item[0]} ID {str(item[1])} <b>“Требуется доработка”\nСрок ответа исполнителя:</b>\n{item[3]}\n')
+            
+        if finish_result['Срок превышен']:
+            deadline_exceeded_message = 'Заявки с статусом “Превышен срок”\n'
+            for item in finish_result['Срок превышен']:
+                deadline_exceeded_message += emoji.emojize(f":double_exclamation_mark: <b>УК {item[0]}</b> ID {str(item[1])}\n<b>Срок ответа</b>:\n{item[3]}\n")
+
+        logger.info(f'{closed_message=}\n{exceed_message=}\n{deadline_exceeded_message=}')
+        
+        if closed_message:
+            closed_message_ids = await send_long_message_to_group(
+            bot=bot,
+            chat_id=GROUP_CHAT_MAX_ID,  # ID группового чата
+            text=closed_message,
+            max_length=4096,
+            delay=0.3,  # задержка 300 мс между сообщениями
+            add_part_info=True  # добавляем нумерацию частей
+        )
+            
+        if exceed_message:
+            exceed_message_ids = await send_long_message_to_group(
+            bot=bot,
+            chat_id=GROUP_CHAT_MAX_ID,  # ID группового чата
+            text=exceed_message,
+            max_length=4096,
+            delay=0.3,  # задержка 300 мс между сообщениями
+            add_part_info=True  # добавляем нумерацию частей
+        )
+            
+        if deadline_exceeded_message:
+            exceed_message_ids = await send_long_message_to_group(
+            bot=bot,
+            chat_id=GROUP_CHAT_MAX_ID,  # ID группового чата
+            text=deadline_exceeded_message,
+            max_length=4096,
+            delay=0.3,  # задержка 300 мс между сообщениями
+            add_part_info=True  # добавляем нумерацию частей
+        )
+        await ctx.message.bot.send_message(chat_id=GROUP_CHAT_MAX_ID, text="Завершили проверку актуальности статусов заявок", format='html')
+    except Exception as e:
+        logger.error(f"Произошла ошибка: {e}")
+
 
 async def check_new_claims_sheduler(bot: Bot):
     """Проверяет наличие новых заявок и принимает их в работу, а также
     добавляет в базу данных по расписанию"""
     try:
+        logger.info(f'check_new_claims_sheduler стартовал')
         await bot.send_message(chat_id=GROUP_CHAT_MAX_ID, text="Приступили к поиску новых заявок. Подождите...", format='html')
         new_claims_by_company = await find_info_of_new_claims()
         text_message = ''
@@ -137,7 +203,7 @@ async def check_new_claims_sheduler(bot: Bot):
                 #text_message += f"**{company.upper()}**\n"
                 if info:
                     for claim_id, details in info.items():
-                        text_message += emoji.emojize(f":NEW_button: <b>Новая заявка</b> для УК {company} ID {claim_id}\n:check_mark_button: Статус заявки для УК {company} ID {claim_id} - <b>В работе</b>\n<b>Тип:</b>{details.get('urgency')}\n<b>Срок ответа исполнителя:</b>{details.get('due_date')}\n\n")
+                        text_message += emoji.emojize(f":NEW_button: <b>Новая заявка</b> для УК {company} ID {claim_id}\n:check_mark_button: Статус заявки для УК {company} ID {claim_id} - <b>В работе</b>\n<b>Тип:</b>{details.get('urgency')}\n<b>Срок ответа исполнителя:</b>\n{details.get('due_date')}\n\n")
             if text_message:
                 await bot.send_message(text=text_message, chat_id=GROUP_CHAT_MAX_ID, format='html')
         await bot.send_message(chat_id=GROUP_CHAT_MAX_ID, text="Поиск новых заявок завершен!", format='html')
@@ -166,12 +232,12 @@ async def change_status_sheduler(bot: Bot):
             closed_message += emoji.emojize(f":cross_mark: <b>Заявка закрыта.</b> УК {item[0]} ID {str(item[1])}\n")
 
         for item in finish_result['Требуется доработка']:
-            exceed_message += emoji.emojize(f':warning: Статус заявки для УК {item[0]} ID {str(item[1])} <b>“Требуется доработка”\nСрок ответа исполнителя:</b> {item[3]}\n')
+            exceed_message += emoji.emojize(f':warning: Статус заявки для УК {item[0]} ID {str(item[1])} <b>“Требуется доработка”\nСрок ответа исполнителя:</b>\n{item[3]}\n')
 
         if finish_result['Срок превышен']:
             deadline_exceeded_message = 'Заявки с статусом “Превышен срок”\n'
             for item in finish_result['Срок превышен']:
-                deadline_exceeded_message += emoji.emojize(f":double_exclamation_mark: <b>УК {item[0]}</b> ID {str(item[1])}\n<b>Срок ответа</b>: {item[3]}\n")
+                deadline_exceeded_message += emoji.emojize(f":double_exclamation_mark: <b>УК {item[0]}</b> ID {str(item[1])}\n<b>Срок ответа</b>:\n{item[3]}\n")
         
         if closed_message:
             closed_message_ids = await send_long_message_to_group(
@@ -283,7 +349,7 @@ async def go_to_admin_menu(ctx: CommandContext):
     await ctx.send(text="Выберите одно из действий:", keyboard=claim_keyboard_max())
 
     
-@admin_router_max.callback_query(lambda data:data.payload == "dedline_exceed")
+@admin_router_max.on_button_callback(lambda data:data.payload == "dedline_exceed")
 async def dedline_exceed_handler(ctx: CommandContext):
     """Собирает информацию о заявках с превышенным сроком и отправляет в чат"""
       
@@ -353,7 +419,7 @@ async def check_new_claims_handler(ctx: CommandContext):
                 #text_message += f"**{company.upper()}**\n"
                 if info:
                     for claim_id, details in info.items():
-                        text_message += emoji.emojize(f":NEW_button: <b>Новая заявка</b> для УК {company} ID {claim_id}\n:check_mark_button: Статус заявки для УК {company} ID {claim_id} - <b>В работе</b>\n<b>Тип:</b>{details.get('urgency')}\n<b>Срок ответа исполнителя:</b>{details.get('due_date')}\n\n")
+                        text_message += emoji.emojize(f":NEW_button: <b>Новая заявка</b> для УК {company} ID {claim_id}\n:check_mark_button: Статус заявки для УК {company} ID {claim_id} - <b>В работе</b>\n<b>Тип:</b>{details.get('urgency')}\n<b>Срок ответа исполнителя:</b>\n{details.get('due_date')}\n\n")
             if text_message:
                 await ctx.message.bot.send_message(chat_id=GROUP_CHAT_MAX_ID, text=text_message, format='html')
         await ctx.message.bot.send_message(chat_id=GROUP_CHAT_MAX_ID, text="Поиск новых заявок завершен!", format='html')

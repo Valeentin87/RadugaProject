@@ -1100,7 +1100,7 @@ def scroll_and_click_login_link(driver, timeout=45):
 
 
 async def filled_claims_to_base(login:str, password:str, company_name:str):
-    """Отвечает за наполнение базы данных информацией обо всех имеющихся заявказ
+    """Отвечает за наполнение базы данных информацией обо всех имеющихся заявках
     по всем управляющим компаниям"""
     claims_row_info = None
     logger.info(f"Приступили к обновлению базы данных по всем заявкам для УК {company_name}")

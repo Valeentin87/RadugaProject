@@ -27,6 +27,7 @@ MAX_TOKEN = os.getenv('MAX_TOKEN')
 
 storage = fsm.FSMStorage()
 
-bot = Bot(MAX_TOKEN, default_format="markdown")
+bot = Bot(MAX_TOKEN, default_format="html")
 scheduler = AsyncIOScheduler(timezone='Europe/Moscow') # Создаем объект AsyncIOScheduler для планирования и выполнения задач по времени. Устанавливаем часовой пояс на Europe/Moscow.
+
 
